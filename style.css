@@ -76,6 +76,17 @@ main {
   font-weight: 600;
 }
 
+.rename {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  background: none;
+  color: var(--text);
+  font: 600 1rem/1.4 inherit;
+  padding: 0 0 0.1rem;
+}
+
 .sub {
   color: var(--muted);
   font-size: 0.8rem;
@@ -89,6 +100,28 @@ main {
   font-size: 1.3rem;
   line-height: 1;
   padding: 0 0.25rem;
+}
+
+.lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: #ffffff12;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.chip.on {
+  background: var(--accent);
+  color: var(--text);
 }
 
 .station ul {
@@ -129,11 +162,28 @@ main {
   font-weight: 600;
 }
 
+.at {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .when {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   min-width: 3.6rem;
   text-align: right;
+}
+
+.station summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0 0.15rem;
+}
+
+/* The list inside <details> continues the one above it. */
+.station details ul li:first-child {
+  border-top: 1px solid #ffffff12;
 }
 
 .cancelled .dest,
