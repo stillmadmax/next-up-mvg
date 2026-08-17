@@ -57,6 +57,67 @@ main {
   display: block;
 }
 
+.viewmode {
+  display: block;
+  margin: 0 0 0.5rem auto;
+  padding: 0.3rem 0.7rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.viewmode.active {
+  background: var(--accent);
+  color: var(--text);
+}
+
+/* Compact mode: as many favorites per row as the screen allows. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.tile {
+  background: var(--card);
+  border-radius: 0.75rem;
+  padding: 0.6rem;
+}
+
+.tile h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile ul {
+  list-style: none;
+  padding: 0;
+}
+
+.tile li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0;
+}
+
+.tile .line {
+  flex: 0 0 2.2rem;
+  font-size: 0.75rem;
+}
+
+.tile .when {
+  margin-left: auto;
+  min-width: 0;
+}
+
 .station {
   background: var(--card);
   border-radius: 0.75rem;
