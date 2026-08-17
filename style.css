@@ -118,6 +118,14 @@ main {
   min-width: 0;
 }
 
+.more {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0.35rem 0 0;
+}
+
 .station {
   background: var(--card);
   border-radius: 0.75rem;
