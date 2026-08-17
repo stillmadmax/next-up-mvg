@@ -1,5 +1,7 @@
-# Interne Projektnotizen (Kostenplanung, Rechtshinweise) – bleiben lokal
-mvg-tool-handoff.md
+# Interne Projektnotizen (Kostenplanung, Rechtshinweise) – bleiben lokal.
+# Bewusst als Muster: das Repo ist öffentlich, also soll die Regel auch greifen,
+# wenn so eine Datei später woanders angelegt wird.
+*.local.md
 
 # macOS
 .DS_Store

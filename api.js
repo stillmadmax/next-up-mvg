@@ -23,7 +23,6 @@ function toStation(raw) {
     id: raw.globalId,
     name: raw.name,
     place: raw.place,
-    transportTypes: raw.transportTypes ?? [],
     // only provided by /stations/nearby
     distance: raw.distanceInMeters,
   };
@@ -93,7 +92,6 @@ export async function departures(stationId, limit = 10) {
     // delayInMinutes is absent in the normal case and only set on deviation
     delay: d.delayInMinutes ?? 0,
     cancelled: d.cancelled,
-    platform: d.platform,
   }));
 }
 
