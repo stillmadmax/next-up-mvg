@@ -205,6 +205,61 @@ main {
   padding: 0.35rem 0;
 }
 
+/* The row itself is the button that unfolds the trip. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.station li.open .row {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Overrides the flex layout that `.station li` sets for departure rows. */
+.station li.trip {
+  display: block;
+  padding: 0.1rem 0 0.5rem;
+}
+
+.trip ol {
+  list-style: none;
+  padding: 0 0 0 0.35rem;
+  border-left: 2px solid var(--accent);
+}
+
+.trip ol li {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.15rem 0;
+  border: 0;
+  font-size: 0.9rem;
+}
+
+.trip .at {
+  flex: 0 0 3rem;
+}
+
+.trip .stop {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 0.2rem 0 0 0.35rem;
+}
+
 .station li + li {
   border-top: 1px solid #ffffff12;
 }
