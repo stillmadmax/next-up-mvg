@@ -3,7 +3,8 @@
 A small PWA for the next public transport departures in Munich, built to be
 opened from the home screen and glanced at. Two modes:
 
-- **Favourites** — saved stops, up to 10 departures each
+- **Favourites** — saved stops, freely named, filterable by line and direction;
+  the next four departures with the rest one tap away
 - **Nearby** — geolocation, stops within 1 km sorted by distance
 
 Live: <https://stillmadmax.github.io/next-up-mvg/>
