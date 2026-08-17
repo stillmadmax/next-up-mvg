@@ -1,0 +1,8 @@
+<!-- Rastervorlage fuer die PNG-Icons: randlos und ohne eigene Rundung, weil iOS
+     apple-touch-icons selbst maskiert. Nicht direkt eingebunden. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#111315" />
+  <rect x="112" y="150" width="288" height="52" rx="12" fill="#0065ae" />
+  <rect x="112" y="230" width="288" height="52" rx="12" fill="#00893c" />
+  <rect x="112" y="310" width="200" height="52" rx="12" fill="#d4021d" />
+</svg>
