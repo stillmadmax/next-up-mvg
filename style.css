@@ -1,0 +1,188 @@
+:root {
+  --bg: #111315;
+  --card: #1b1f22;
+  --text: #f2f4f5;
+  --muted: #8b959b;
+  --accent: #3a4750;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Safe-Area, damit im Homescreen-Vollbild nichts unter der Notch klebt */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+
+.tabs button {
+  flex: 1;
+  padding: 0.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: var(--text);
+}
+
+main {
+  padding: 0 0.75rem 2rem;
+}
+
+[data-view] {
+  display: none;
+}
+
+[data-view].active {
+  display: block;
+}
+
+.station {
+  background: var(--card);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.station header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.station h2 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-right: auto;
+}
+
+.remove {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+}
+
+.station ul {
+  list-style: none;
+  padding: 0;
+}
+
+.station li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.station li + li {
+  border-top: 1px solid #ffffff12;
+}
+
+.line {
+  flex: 0 0 2.6rem;
+  text-align: center;
+  padding: 0.15rem 0.3rem;
+  border-radius: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dest {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delay {
+  color: #ff8a5c;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.when {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 3.6rem;
+  text-align: right;
+}
+
+.cancelled .dest,
+.cancelled .when {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.status,
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+.search {
+  margin-top: 1rem;
+}
+
+.search input {
+  width: 100%;
+  padding: 0.7rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: var(--card);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#results {
+  list-style: none;
+  padding: 0;
+  margin-top: 0.5rem;
+}
+
+#results button {
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--text);
+  margin-bottom: 0.35rem;
+  font-size: 0.95rem;
+}
+
+#results span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
+}

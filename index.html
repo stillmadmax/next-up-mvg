@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Next Up</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- Vollbild ohne Browser-Chrome, wenn vom iOS-Homescreen gestartet -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Next Up" />
+    <meta name="theme-color" content="#111315" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+  </head>
+  <body>
+    <nav class="tabs">
+      <button data-tab="favoriten">Favoriten</button>
+      <button data-tab="naehe">In der Nähe</button>
+    </nav>
+
+    <main>
+      <div data-view="favoriten">
+        <div id="favorites"></div>
+        <form class="search" autocomplete="off" onsubmit="return false">
+          <input id="search" type="search" placeholder="Haltestelle suchen …" />
+          <ul id="results"></ul>
+        </form>
+      </div>
+
+      <div data-view="naehe">
+        <div id="nearby"></div>
+      </div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
