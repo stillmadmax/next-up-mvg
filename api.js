@@ -92,6 +92,9 @@ export async function departures(stationId, limit = 10) {
     // delayInMinutes is absent in the normal case and only set on deviation
     delay: d.delayInMinutes ?? 0,
     cancelled: d.cancelled,
+    // Rail replacement: keeps the rail line's label ("U6") but runs as a bus,
+    // from a different stop. The API flags it, so we don't guess from the label.
+    sev: d.sev === true,
   }));
 }
 

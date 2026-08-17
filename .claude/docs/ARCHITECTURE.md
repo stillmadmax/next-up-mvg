@@ -118,6 +118,23 @@ card.
   `cache: 'reload'` to bypass the HTTP cache; the cache is an offline fallback
   only. Departure data is never cached, and the API sends `cache-control:
   no-store` itself.
+- **Markup is escaped at every leaf.** Rendering is string interpolation into
+  `innerHTML`, and the values come from the API or from a name the user typed, so
+  `esc()` wraps each one — in text and in attributes alike, since a quote in an
+  attribute escapes the attribute. Values read back through `dataset` need no
+  counterpart: the HTML parser decodes them, so the filter and trip lookups still
+  compare against the original string. Composite keys (`tripKey`) are escaped
+  where they are written, not where they are built, so both sides keep matching.
+- **Rail replacement is marked, not just recoloured.** A replacement bus keeps
+  the rail line's label, so the API returns `label: "U6"` with
+  `transportType: "BUS"` — the badge alone would send you to a platform with no
+  train. It carries a `sev` boolean, so this is read from the flag rather than
+  guessed from the label. The badge takes the `SEV` colour *and* an "SEV"
+  marker: colour on its own fails colour blindness and a hurried glance.
+- **`LINE_COLORS` is looked up with `Object.hasOwn`.** A plain lookup would
+  inherit from `Object.prototype`, so a `transportType` of `constructor` or
+  `toString` would skip the `?? '#666'` fallback and put function source into a
+  `style` attribute.
 - **The PNG icon is full-bleed.** iOS applies its own mask to `apple-touch-icon`;
   a pre-rounded image would give doubled corners. `icons/icon-square.svg` is the
   raster source and is intentionally referenced by nothing.
@@ -131,10 +148,6 @@ card.
   departures hours ahead (seen: U6 to Garching, 324 min). They currently fall out
   of the list only by chance, via `limit`. Filtering above ~60 min is tempting,
   but at night one *wants* to see the last train.
-- **API values are interpolated into HTML unescaped**, including into attributes
-  (`data-destination`, station names). A name containing a quote or `&` would
-  break the markup. Unlikely with MVG's names, but it is an unchecked assumption
-  about third-party data.
 - Behaviour when the network drops mid-request is untested.
 - The icon is a placeholder: three coloured bars.
 

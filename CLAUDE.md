@@ -36,8 +36,13 @@ actually lands in the cache. Clear `nextup:` keys afterwards.
 Note: the MVG API returns 403 to curl but 200 to the browser. A failing curl is
 not evidence the API is down.
 
-## Known gap
+## Rendering
 
-API values are interpolated into HTML unescaped, including into attributes. A
-station or destination containing `"` or `&` would break the markup. If you
-touch the rendering, consider fixing this rather than extending it.
+Views are built by interpolating strings into `innerHTML`. Every value that
+comes from the API or from the user must go through `esc()` — in text *and* in
+attributes, because a quote breaks out of an attribute. Only pre-built markup
+fragments are interpolated raw. Do not add an unescaped `${...}` of foreign data;
+that is how this file's previous "known gap" section came about.
+
+Values read back via `dataset` are already decoded by the parser, so never
+unescape them by hand.
