@@ -76,6 +76,17 @@ main {
   font-weight: 600;
 }
 
+.rename {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  background: none;
+  color: var(--text);
+  font: 600 1rem/1.4 inherit;
+  padding: 0 0 0.1rem;
+}
+
 .sub {
   color: var(--muted);
   font-size: 0.8rem;

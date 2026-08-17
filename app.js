@@ -39,37 +39,73 @@ let refreshTimer = null;
 
 // ---- Favorites (client-side only; one user, one device) ---------------------
 
+// A favorite is a named, filtered view of a station — the same station can be in
+// the list twice, e.g. "Fahrt heim" and "Fahrt los" with opposite directions.
+// Hence uid: the station id no longer identifies a card.
 function loadFavorites() {
+  let list;
   try {
-    return JSON.parse(localStorage.getItem('favorites') ?? '[]');
+    list = JSON.parse(localStorage.getItem('favorites') ?? '[]');
   } catch {
     return [];
   }
+
+  // Favorites saved before uid existed; persist the migration so the ids the
+  // markup carries stay stable across renders.
+  if (list.some((f) => !f.uid)) {
+    list.forEach((f, i) => (f.uid ??= `${f.id}-${i}`));
+    saveFavorites(list);
+  }
+  return list;
 }
 
 function saveFavorites(list) {
   localStorage.setItem('favorites', JSON.stringify(list));
 }
 
+function updateFavorite(uid, change) {
+  const list = loadFavorites();
+  const fav = list.find((f) => f.uid === uid);
+  if (!fav) return;
+  change(fav);
+  saveFavorites(list);
+}
+
 function addFavorite(station) {
   const list = loadFavorites();
-  if (list.some((s) => s.id === station.id)) return;
-  // lines: selected line labels; empty means "show everything"
-  list.push({ id: station.id, name: station.name, place: station.place, lines: [] });
+  list.push({
+    uid: `${station.id}-${list.length}-${Date.now()}`,
+    id: station.id,
+    name: station.name,
+    place: station.place,
+    label: '', // user-given name; empty falls back to the station name
+    lines: [], // selected line labels; empty means "show everything"
+    destinations: [], // selected directions, same convention
+  });
   saveFavorites(list);
 }
 
-function removeFavorite(id) {
-  saveFavorites(loadFavorites().filter((s) => s.id !== id));
+function removeFavorite(uid) {
+  saveFavorites(loadFavorites().filter((f) => f.uid !== uid));
 }
 
-function toggleLine(id, line) {
-  const list = loadFavorites();
-  const fav = list.find((s) => s.id === id);
-  if (!fav) return;
-  const lines = fav.lines ?? [];
-  fav.lines = lines.includes(line) ? lines.filter((l) => l !== line) : [...lines, line];
-  saveFavorites(list);
+function toggleLine(uid, line) {
+  updateFavorite(uid, (fav) => {
+    const lines = fav.lines ?? [];
+    fav.lines = lines.includes(line) ? lines.filter((l) => l !== line) : [...lines, line];
+    // A direction belongs to a line, so a changed line filter can leave a
+    // selected direction invisible — and then unselectable. Reset it instead.
+    fav.destinations = [];
+  });
+}
+
+function toggleDestination(uid, destination) {
+  updateFavorite(uid, (fav) => {
+    const dests = fav.destinations ?? [];
+    fav.destinations = dests.includes(destination)
+      ? dests.filter((d) => d !== destination)
+      : [...dests, destination];
+  });
 }
 
 // ---- Rendering -------------------------------------------------------------
@@ -97,7 +133,7 @@ function departureRow(d) {
 // and the auto refresh rebuilds the markup every 30 s.
 const expanded = new Set();
 
-function departureList(station, deps, collapsible) {
+function departureList(uid, deps, collapsible) {
   if (!collapsible || deps.length <= FAVORITE_VISIBLE) {
     return `<ul>${deps.map(departureRow).join('')}</ul>`;
   }
@@ -105,42 +141,61 @@ function departureList(station, deps, collapsible) {
   const rest = deps.slice(FAVORITE_VISIBLE);
   return `
     <ul>${deps.slice(0, FAVORITE_VISIBLE).map(departureRow).join('')}</ul>
-    <details ${expanded.has(station.id) ? 'open' : ''}>
-      <summary data-expand="${station.id}">${rest.length} weitere</summary>
+    <details ${expanded.has(uid) ? 'open' : ''}>
+      <summary data-expand="${uid}">${rest.length} weitere</summary>
       <ul>${rest.map(departureRow).join('')}</ul>
     </details>`;
 }
 
-/** Toggle chips for every line seen at the station; active ones are the filter. */
-function lineChips(station, deps) {
-  const selected = station.lines ?? [];
-  const lines = [...new Set(deps.map((d) => d.line))].sort((a, b) =>
-    a.localeCompare(b, 'de', { numeric: true })
-  );
-  if (lines.length < 2) return '';
-
-  return `<div class="lines">${lines
+function chipRow(uid, attribute, values, selected) {
+  if (values.length < 2) return '';
+  return `<div class="lines">${values
     .map(
-      (l) =>
-        `<button class="chip${selected.includes(l) ? ' on' : ''}" data-station="${station.id}"
-           data-line="${l}" aria-pressed="${selected.includes(l)}">${l}</button>`
+      (v) =>
+        `<button class="chip${selected.includes(v) ? ' on' : ''}" data-uid="${uid}"
+           data-${attribute}="${v}" aria-pressed="${selected.includes(v)}">${v}</button>`
     )
     .join('')}</div>`;
 }
 
-function stationCard(station, deps, { removable = false, chips = '', collapsible = false } = {}) {
-  const sub = station.distance !== undefined ? `${station.distance} m` : station.place;
-  const remove = removable
-    ? `<button class="remove" data-remove="${station.id}" aria-label="Favorit entfernen">×</button>`
-    : '';
+/**
+ * One row of line chips, one of direction chips; both filters apply together.
+ * The directions come from the line-filtered departures, so picking a line
+ * narrows the second row to the directions that line actually serves.
+ */
+function filterChips(fav, all, lineFiltered) {
+  const sorted = (list) => [...new Set(list)].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+
+  return (
+    chipRow(fav.uid, 'line', sorted(all.map((d) => d.line)), fav.lines ?? []) +
+    chipRow(
+      fav.uid,
+      'destination',
+      sorted(lineFiltered.map((d) => d.destination)),
+      fav.destinations ?? []
+    )
+  );
+}
+
+function stationCard(station, deps, { favorite = null, chips = '', collapsible = false } = {}) {
+  const distance = station.distance !== undefined ? `${station.distance} m` : station.place;
+  // A renamed favorite keeps the station name as its subtitle — otherwise the
+  // card no longer says where "Fahrt heim" actually departs.
+  const title = favorite?.label || station.name;
+  const sub = favorite?.label ? station.name : distance;
+
+  const head = favorite
+    ? `<h2 data-rename="${favorite.uid}">${title}</h2><span class="sub">${sub}</span>
+       <button class="remove" data-remove="${favorite.uid}" aria-label="Favorit entfernen">×</button>`
+    : `<h2>${title}</h2><span class="sub">${sub}</span>`;
 
   const body = deps.length
-    ? departureList(station, deps, collapsible)
+    ? departureList(favorite?.uid, deps, collapsible)
     : '<p class="empty">Keine Abfahrten</p>';
 
   return `
     <section class="station">
-      <header><h2>${station.name}</h2><span class="sub">${sub}</span>${remove}</header>
+      <header>${head}</header>
       ${chips}
       ${body}
     </section>`;
@@ -161,17 +216,27 @@ async function renderFavorites() {
 
   setStatus(el.favorites, 'Lade …');
   try {
+    // Two favorites can point at the same station; one request serves both.
+    const pending = new Map();
+    const fetchOnce = (id) => {
+      if (!pending.has(id)) pending.set(id, departures(id, FAVORITE_FETCH));
+      return pending.get(id);
+    };
+
     const cards = await Promise.all(
-      favorites.map(async (station) => {
-        const all = await departures(station.id, FAVORITE_FETCH);
-        const filter = station.lines ?? [];
-        const shown = (filter.length ? all.filter((d) => filter.includes(d.line)) : all).slice(
-          0,
-          FAVORITE_DEPARTURES
-        );
-        return stationCard(station, shown, {
-          removable: true,
-          chips: lineChips(station, all),
+      favorites.map(async (fav) => {
+        const all = await fetchOnce(fav.id);
+        const lines = fav.lines ?? [];
+        const dests = fav.destinations ?? [];
+        const lineFiltered = lines.length ? all.filter((d) => lines.includes(d.line)) : all;
+        const shown = (dests.length
+          ? lineFiltered.filter((d) => dests.includes(d.destination))
+          : lineFiltered
+        ).slice(0, FAVORITE_DEPARTURES);
+
+        return stationCard(fav, shown, {
+          favorite: fav,
+          chips: filterChips(fav, all, lineFiltered),
           collapsible: true,
         });
       })
@@ -225,6 +290,8 @@ async function renderNearby() {
 }
 
 function renderActiveView() {
+  // A rebuild would throw away a half-typed name.
+  if (document.querySelector('.rename')) return;
   if (activeView === 'favoriten') renderFavorites();
   else renderNearby();
 }
@@ -276,10 +343,17 @@ el.favorites.addEventListener('click', (e) => {
     return;
   }
 
-  const chip = e.target.closest('[data-line]');
+  const chip = e.target.closest('.chip');
   if (chip) {
-    toggleLine(chip.dataset.station, chip.dataset.line);
+    if (chip.dataset.line) toggleLine(chip.dataset.uid, chip.dataset.line);
+    else toggleDestination(chip.dataset.uid, chip.dataset.destination);
     renderFavorites();
+    return;
+  }
+
+  const title = e.target.closest('[data-rename]');
+  if (title) {
+    startRename(title);
     return;
   }
 
@@ -290,6 +364,33 @@ el.favorites.addEventListener('click', (e) => {
   if (expanded.has(id)) expanded.delete(id);
   else expanded.add(id);
 });
+
+function startRename(title) {
+  const uid = title.dataset.rename;
+  const fav = loadFavorites().find((f) => f.uid === uid);
+  if (!fav) return;
+
+  const input = document.createElement('input');
+  input.className = 'rename';
+  input.value = fav.label ?? '';
+  input.placeholder = fav.name;
+  title.replaceWith(input);
+  input.focus();
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return; // blur fires again once the re-render removes the input
+    done = true;
+    if (save) updateFavorite(uid, (f) => (f.label = input.value.trim()));
+    renderFavorites();
+  };
+
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
+}
 
 // ---- Tabs and auto refresh -------------------------------------------------
 
