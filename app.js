@@ -8,6 +8,8 @@ const DEPARTURES_PER_STATION = 4;
 const FAVORITE_DEPARTURES = 10;
 // Only the next few matter at a glance; the rest sit behind a disclosure.
 const FAVORITE_VISIBLE = 4;
+// Compact mode is for a glance: one tile per favorite, side by side.
+const COMPACT_DEPARTURES = 2;
 // Filtering happens client-side, so a favorite always fetches a larger batch:
 // it keeps the list full when a line filter throws most departures away, and it
 // is the only way to know which lines a station actually serves.
@@ -32,9 +34,11 @@ const el = {
   nearby: document.getElementById('nearby'),
   search: document.getElementById('search'),
   results: document.getElementById('results'),
+  compact: document.getElementById('compact'),
 };
 
 let activeView = 'favoriten';
+let compact = localStorage.getItem('compact') === '1';
 let refreshTimer = null;
 
 // ---- Favorites (client-side only; one user, one device) ---------------------
@@ -201,7 +205,27 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
     </section>`;
 }
 
+function compactTile(fav, deps) {
+  const rows = deps.slice(0, COMPACT_DEPARTURES).map((d) => {
+    const color = LINE_COLORS[d.type] ?? '#666';
+    const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
+    return `
+      <li class="${d.cancelled ? 'cancelled' : ''}">
+        <span class="line" style="background:${color}">${d.line}</span>
+        <span class="at">${clockTime(d.at)}</span>
+        <span class="when">${d.cancelled ? 'entfällt' : when}</span>
+      </li>`;
+  });
+
+  return `
+    <section class="tile">
+      <h3>${fav.label || fav.name}</h3>
+      ${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="empty">Keine Abfahrten</p>'}
+    </section>`;
+}
+
 function setStatus(container, message) {
+  container.className = ''; // a status line is never part of the compact grid
   container.innerHTML = `<p class="status">${message}</p>`;
 }
 
@@ -234,6 +258,8 @@ async function renderFavorites() {
           : lineFiltered
         ).slice(0, FAVORITE_DEPARTURES);
 
+        if (compact) return compactTile(fav, shown);
+
         return stationCard(fav, shown, {
           favorite: fav,
           chips: filterChips(fav, all, lineFiltered),
@@ -241,6 +267,7 @@ async function renderFavorites() {
         });
       })
     );
+    el.favorites.className = compact ? 'grid' : '';
     el.favorites.innerHTML = cards.join('');
   } catch (err) {
     setStatus(el.favorites, `Fehler: ${err.message}`);
@@ -295,6 +322,18 @@ function renderActiveView() {
   if (activeView === 'favoriten') renderFavorites();
   else renderNearby();
 }
+
+function syncCompact() {
+  el.compact.classList.toggle('active', compact);
+  el.compact.setAttribute('aria-pressed', String(compact));
+}
+
+el.compact.addEventListener('click', () => {
+  compact = !compact;
+  localStorage.setItem('compact', compact ? '1' : '0');
+  syncCompact();
+  renderFavorites();
+});
 
 // ---- Search ----------------------------------------------------------------
 
@@ -421,5 +460,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 syncTabs();
+syncCompact();
 renderActiveView();
 startRefresh();
