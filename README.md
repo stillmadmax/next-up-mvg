@@ -15,6 +15,10 @@ A static site with no backend. The browser calls the unofficial MVG API at
 `mvg.de/api/bgw-pt/v3` directly: it sends permissive CORS headers and needs no
 API key, so a proxy would only add moving parts. All API access is wrapped in
 `api.js` — if those headers ever go away, only the base URL there changes.
+`storage.js` owns everything kept on the device, `app.js` the rendering and the
+event wiring. `index.html`, `manifest.json` and `sw.js` have to stay at the
+root: a service worker cannot control pages above its own directory, and the
+manifest resolves `scope` and `start_url` against its own URL.
 
 Favourites are kept in `localStorage`. Nearby mode uses the `distanceInMeters`
 the API already returns instead of computing distances, and is capped at six

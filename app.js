@@ -1,4 +1,14 @@
 import { searchStations, nearbyStations, departures, stationLines, tripStops } from './api.js';
+import {
+  store,
+  loadFavorites,
+  updateFavorite,
+  addFavorite,
+  removeFavorite,
+  toggleLine,
+  toggleDestination,
+  learnRoutes,
+} from './storage.js';
 
 // In nearby mode every station costs its own request. Without a cap a single
 // page load turns into ~30 requests against an unofficial API.
@@ -37,108 +47,14 @@ const el = {
   compact: document.getElementById('compact'),
 };
 
-// ---- Storage ----------------------------------------------------------------
-
-// localStorage belongs to the origin, and on github.io that is the whole
-// account — every project published there shares this namespace. Hence the
-// prefix: another project's "favorites" must not collide with ours.
-const PREFIX = 'nextup:';
-const OWN_KEYS = (key) => key === 'favorites' || key === 'compact' || key.startsWith('routes:');
-
-const store = {
-  get: (key) => localStorage.getItem(PREFIX + key),
-  set: (key, value) => localStorage.setItem(PREFIX + key, value),
-  remove: (key) => localStorage.removeItem(PREFIX + key),
-};
-
-// Earlier versions wrote these keys unprefixed; move them once.
-for (const key of Object.keys(localStorage)) {
-  if (key.startsWith(PREFIX) || !OWN_KEYS(key)) continue;
-  localStorage.setItem(PREFIX + key, localStorage.getItem(key));
-  localStorage.removeItem(key);
-}
-
 let activeView = 'favoriten';
 let compact = store.get('compact') === '1';
-let refreshTimer = null;
 
-// ---- Favorites (client-side only; one user, one device) ---------------------
+// ---- Known lines per station ------------------------------------------------
 
-// A favorite is a named, filtered view of a station — the same station can be in
-// the list twice, e.g. "Fahrt heim" and "Fahrt los" with opposite directions.
-// Hence uid: the station id no longer identifies a card.
-function loadFavorites() {
-  let list;
-  try {
-    list = JSON.parse(store.get('favorites') ?? '[]');
-  } catch {
-    return [];
-  }
-
-  // Favorites saved before uid existed; persist the migration so the ids the
-  // markup carries stay stable across renders.
-  if (list.some((f) => !f.uid)) {
-    list.forEach((f, i) => (f.uid ??= `${f.id}-${i}`));
-    saveFavorites(list);
-  }
-  return list;
-}
-
-function saveFavorites(list) {
-  store.set('favorites', JSON.stringify(list));
-}
-
-function updateFavorite(uid, change) {
-  const list = loadFavorites();
-  const fav = list.find((f) => f.uid === uid);
-  if (!fav) return;
-  change(fav);
-  saveFavorites(list);
-}
-
-function addFavorite(station) {
-  const list = loadFavorites();
-  list.push({
-    uid: `${station.id}-${list.length}-${Date.now()}`,
-    id: station.id,
-    name: station.name,
-    place: station.place,
-    label: '', // user-given name; empty falls back to the station name
-    lines: [], // selected line labels; empty means "show everything"
-    destinations: [], // selected directions, same convention
-  });
-  saveFavorites(list);
-}
-
-function removeFavorite(uid) {
-  saveFavorites(loadFavorites().filter((f) => f.uid !== uid));
-}
-
-function toggleLine(uid, line) {
-  updateFavorite(uid, (fav) => {
-    const lines = fav.lines ?? [];
-    fav.lines = lines.includes(line) ? lines.filter((l) => l !== line) : [...lines, line];
-    // A direction belongs to a line, so a changed line filter can leave a
-    // selected direction invisible — and then unselectable. Reset it instead.
-    fav.destinations = [];
-  });
-}
-
-function toggleDestination(uid, destination) {
-  updateFavorite(uid, (fav) => {
-    const dests = fav.destinations ?? [];
-    fav.destinations = dests.includes(destination)
-      ? dests.filter((d) => d !== destination)
-      : [...dests, destination];
-  });
-}
-
-// ---- Known lines and directions per station ---------------------------------
-
-// The departures list only reaches ~75 minutes ahead, so at night it knows
-// nothing about the rush hour express bus or the direction that stops running
-// after 20:00. Lines come from the API; directions have no such endpoint, so
-// they are remembered as they are seen.
+// The departures list only reaches ~75 minutes ahead, so at 23:00 it knows
+// nothing about the rush hour express bus. The lines endpoint does, and the
+// answer never changes within a session — so ask it once per station.
 const lineCache = new Map();
 
 function stationLinesCached(stationId) {
@@ -150,30 +66,6 @@ function stationLinesCached(stationId) {
     );
   }
   return lineCache.get(stationId);
-}
-
-function knownRoutes(stationId) {
-  try {
-    return JSON.parse(store.get(`routes:${stationId}`) ?? '[]');
-  } catch {
-    return [];
-  }
-}
-
-/** Remembers which directions a line was seen going in, for the filter chips. */
-function learnRoutes(stationId, deps) {
-  const known = knownRoutes(stationId);
-  const seen = new Set(known.map(([l, d]) => `${l}|${d}`));
-  let added = false;
-
-  for (const d of deps) {
-    if (seen.has(`${d.line}|${d.destination}`)) continue;
-    seen.add(`${d.line}|${d.destination}`);
-    known.push([d.line, d.destination]);
-    added = true;
-  }
-  if (added) store.set(`routes:${stationId}`, JSON.stringify(known));
-  return known;
 }
 
 // ---- Rendering -------------------------------------------------------------
@@ -203,9 +95,17 @@ function tripPanel() {
   return `<li class="trip"><ol>${stops}</ol><p class="note">Planzeiten</p></li>`;
 }
 
-function departureRow(d, stationId) {
-  const color = LINE_COLORS[d.type] ?? '#666';
+// Line badge and countdown look the same in both views, so build them once.
+function lineBadge(d) {
+  return `<span class="line" style="background:${LINE_COLORS[d.type] ?? '#666'}">${d.line}</span>`;
+}
+
+function whenLabel(d) {
   const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
+  return `<span class="when">${d.cancelled ? 'entfällt' : when}</span>`;
+}
+
+function departureRow(d, stationId) {
   const delay = d.delay > 0 ? `<span class="delay">+${d.delay}</span>` : '';
   const key = tripKey(stationId, d);
   const open = openTrip?.key === key;
@@ -214,11 +114,11 @@ function departureRow(d, stationId) {
     <li class="${d.cancelled ? 'cancelled' : ''}${open ? ' open' : ''}">
       <button class="row" data-trip="${key}" data-station="${stationId}" data-line="${d.line}"
         data-destination="${d.destination}" data-planned="${d.planned}">
-        <span class="line" style="background:${color}">${d.line}</span>
+        ${lineBadge(d)}
         <span class="dest">${d.destination}</span>
         ${delay}
         <span class="at">${clockTime(d.at)}</span>
-        <span class="when">${d.cancelled ? 'entfällt' : when}</span>
+        ${whenLabel(d)}
       </button>
     </li>
     ${open ? tripPanel() : ''}`;
@@ -304,16 +204,14 @@ function compactTile(fav, deps) {
   const visible = open ? deps.length : COMPACT_DEPARTURES;
   const hidden = deps.length - COMPACT_DEPARTURES;
 
-  const rows = deps.slice(0, visible).map((d) => {
-    const color = LINE_COLORS[d.type] ?? '#666';
-    const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
-    return `
+  const rows = deps.slice(0, visible).map(
+    (d) => `
       <li class="${d.cancelled ? 'cancelled' : ''}">
-        <span class="line" style="background:${color}">${d.line}</span>
+        ${lineBadge(d)}
         <span class="at">${clockTime(d.at)}</span>
-        <span class="when">${d.cancelled ? 'entfällt' : when}</span>
-      </li>`;
-  });
+        ${whenLabel(d)}
+      </li>`
+  );
 
   const more =
     hidden > 0
@@ -604,12 +502,9 @@ el.tabs.forEach((tab) =>
 
 // Departure times go stale by the second, so reload regularly — but only while
 // the page is actually visible.
-function startRefresh() {
-  clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') renderActiveView();
-  }, REFRESH_MS);
-}
+setInterval(() => {
+  if (document.visibilityState === 'visible') renderActiveView();
+}, REFRESH_MS);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') renderActiveView();
@@ -634,4 +529,3 @@ if ('serviceWorker' in navigator) {
 syncTabs();
 syncCompact();
 renderActiveView();
-startRefresh();

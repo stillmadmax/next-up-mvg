@@ -3,7 +3,7 @@
 // keep running the previous build for ten minutes after a deploy — the whole
 // reason this file exists. Bump CACHE only to discard old entries; correctness
 // does not depend on it, since every request goes to the network first.
-const CACHE = 'next-up-v1';
+const CACHE = 'next-up-v2';
 
 // Enough to start the app without a network. Departure data is never cached.
 const SHELL = [
@@ -11,10 +11,11 @@ const SHELL = [
   './index.html',
   './app.js',
   './api.js',
+  './storage.js',
   './style.css',
   './manifest.json',
-  './icon-180.png',
-  './icon-192.png',
+  './icons/icon-180.png',
+  './icons/icon-192.png',
 ];
 
 self.addEventListener('install', (event) => {
