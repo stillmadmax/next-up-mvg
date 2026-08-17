@@ -1,4 +1,4 @@
-import { searchStations, nearbyStations, departures } from './api.js';
+import { searchStations, nearbyStations, departures, stationLines, tripStops } from './api.js';
 
 // In nearby mode every station costs its own request. Without a cap a single
 // page load turns into ~30 requests against an unofficial API.
@@ -112,42 +112,113 @@ function toggleDestination(uid, destination) {
   });
 }
 
+// ---- Known lines and directions per station ---------------------------------
+
+// The departures list only reaches ~75 minutes ahead, so at night it knows
+// nothing about the rush hour express bus or the direction that stops running
+// after 20:00. Lines come from the API; directions have no such endpoint, so
+// they are remembered as they are seen.
+const lineCache = new Map();
+
+function stationLinesCached(stationId) {
+  if (!lineCache.has(stationId)) {
+    // A failure here only costs completeness, so the render must not depend on it.
+    lineCache.set(
+      stationId,
+      stationLines(stationId).catch(() => [])
+    );
+  }
+  return lineCache.get(stationId);
+}
+
+function knownRoutes(stationId) {
+  try {
+    return JSON.parse(localStorage.getItem(`routes:${stationId}`) ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** Remembers which directions a line was seen going in, for the filter chips. */
+function learnRoutes(stationId, deps) {
+  const known = knownRoutes(stationId);
+  const seen = new Set(known.map(([l, d]) => `${l}|${d}`));
+  let added = false;
+
+  for (const d of deps) {
+    if (seen.has(`${d.line}|${d.destination}`)) continue;
+    seen.add(`${d.line}|${d.destination}`);
+    known.push([d.line, d.destination]);
+    added = true;
+  }
+  if (added) localStorage.setItem(`routes:${stationId}`, JSON.stringify(known));
+  return known;
+}
+
 // ---- Rendering -------------------------------------------------------------
 
 function clockTime(epochMs) {
   return new Date(epochMs).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-function departureRow(d) {
+// The trip currently unfolded, at most one at a time.
+let openTrip = null;
+
+function tripKey(stationId, d) {
+  return `${stationId}|${d.line}|${d.planned}`;
+}
+
+function tripPanel() {
+  if (openTrip.state === 'loading') {
+    return '<li class="trip"><p class="status">Fahrtverlauf wird geladen …</p></li>';
+  }
+  if (openTrip.state === 'error') {
+    return `<li class="trip"><p class="status">${openTrip.message}</p></li>`;
+  }
+
+  const stops = openTrip.stops
+    .map((s) => `<li><span class="at">${clockTime(s.at)}</span><span class="stop">${s.name}</span></li>`)
+    .join('');
+  return `<li class="trip"><ol>${stops}</ol><p class="note">Planzeiten</p></li>`;
+}
+
+function departureRow(d, stationId) {
   const color = LINE_COLORS[d.type] ?? '#666';
   const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
   const delay = d.delay > 0 ? `<span class="delay">+${d.delay}</span>` : '';
+  const key = tripKey(stationId, d);
+  const open = openTrip?.key === key;
 
   return `
-    <li class="${d.cancelled ? 'cancelled' : ''}">
-      <span class="line" style="background:${color}">${d.line}</span>
-      <span class="dest">${d.destination}</span>
-      ${delay}
-      <span class="at">${clockTime(d.at)}</span>
-      <span class="when">${d.cancelled ? 'entfällt' : when}</span>
-    </li>`;
+    <li class="${d.cancelled ? 'cancelled' : ''}${open ? ' open' : ''}">
+      <button class="row" data-trip="${key}" data-station="${stationId}" data-line="${d.line}"
+        data-destination="${d.destination}" data-planned="${d.planned}">
+        <span class="line" style="background:${color}">${d.line}</span>
+        <span class="dest">${d.destination}</span>
+        ${delay}
+        <span class="at">${clockTime(d.at)}</span>
+        <span class="when">${d.cancelled ? 'entfällt' : when}</span>
+      </button>
+    </li>
+    ${open ? tripPanel() : ''}`;
 }
 
 // Which favorites the user has expanded. Kept in memory only: it is view state,
 // and the auto refresh rebuilds the markup every 30 s.
 const expanded = new Set();
 
-function departureList(uid, deps, collapsible) {
+function departureList(uid, deps, stationId, collapsible) {
+  const rows = (list) => list.map((d) => departureRow(d, stationId)).join('');
   if (!collapsible || deps.length <= FAVORITE_VISIBLE) {
-    return `<ul>${deps.map(departureRow).join('')}</ul>`;
+    return `<ul>${rows(deps)}</ul>`;
   }
 
   const rest = deps.slice(FAVORITE_VISIBLE);
   return `
-    <ul>${deps.slice(0, FAVORITE_VISIBLE).map(departureRow).join('')}</ul>
+    <ul>${rows(deps.slice(0, FAVORITE_VISIBLE))}</ul>
     <details ${expanded.has(uid) ? 'open' : ''}>
       <summary data-expand="${uid}">${rest.length} weitere</summary>
-      <ul>${rest.map(departureRow).join('')}</ul>
+      <ul>${rows(rest)}</ul>
     </details>`;
 }
 
@@ -164,20 +235,21 @@ function chipRow(uid, attribute, values, selected) {
 
 /**
  * One row of line chips, one of direction chips; both filters apply together.
- * The directions come from the line-filtered departures, so picking a line
- * narrows the second row to the directions that line actually serves.
+ * Both rows list what the station is known to serve, not only what departs in
+ * the next hour. Picking a line narrows the second row to that line's
+ * directions.
  */
-function filterChips(fav, all, lineFiltered) {
-  const sorted = (list) => [...new Set(list)].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+function filterChips(fav, lines, routes) {
+  const sorted = (list) =>
+    [...new Set(list)].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+  const selectedLines = fav.lines ?? [];
+  const directions = routes
+    .filter(([line]) => !selectedLines.length || selectedLines.includes(line))
+    .map(([, destination]) => destination);
 
   return (
-    chipRow(fav.uid, 'line', sorted(all.map((d) => d.line)), fav.lines ?? []) +
-    chipRow(
-      fav.uid,
-      'destination',
-      sorted(lineFiltered.map((d) => d.destination)),
-      fav.destinations ?? []
-    )
+    chipRow(fav.uid, 'line', sorted(lines), selectedLines) +
+    chipRow(fav.uid, 'destination', sorted(directions), fav.destinations ?? [])
   );
 }
 
@@ -194,7 +266,7 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
     : `<h2>${title}</h2><span class="sub">${sub}</span>`;
 
   const body = deps.length
-    ? departureList(favorite?.uid, deps, collapsible)
+    ? departureList(favorite?.uid, deps, station.id, collapsible)
     : '<p class="empty">Keine Abfahrten</p>';
 
   return `
@@ -249,7 +321,11 @@ async function renderFavorites() {
     return;
   }
 
-  setStatus(el.favorites, 'Lade …');
+  // Only the first render shows a placeholder. A refresh swaps the markup once
+  // the new data is there, so the list does not blink away every 30 seconds.
+  const filled = !!el.favorites.querySelector('.station, .tile');
+  if (!filled) setStatus(el.favorites, 'Lade …');
+
   try {
     // Two favorites can point at the same station; one request serves both.
     const pending = new Map();
@@ -271,9 +347,11 @@ async function renderFavorites() {
 
         if (compact) return compactTile(fav, shown);
 
+        const known = await stationLinesCached(fav.id);
+        const routes = learnRoutes(fav.id, all);
         return stationCard(fav, shown, {
           favorite: fav,
-          chips: filterChips(fav, all, lineFiltered),
+          chips: filterChips(fav, [...known, ...all.map((d) => d.line)], routes),
           collapsible: true,
         });
       })
@@ -281,7 +359,8 @@ async function renderFavorites() {
     el.favorites.className = compact ? 'grid' : '';
     el.favorites.innerHTML = cards.join('');
   } catch (err) {
-    setStatus(el.favorites, `Fehler: ${err.message}`);
+    // On a refresh, keep what is on screen — a hiccup should not wipe the list.
+    if (!filled) setStatus(el.favorites, `Fehler: ${err.message}`);
   }
 }
 
@@ -300,11 +379,13 @@ function currentPosition() {
 }
 
 async function renderNearby() {
-  setStatus(el.nearby, 'Standort wird ermittelt …');
+  const filled = !!el.nearby.querySelector('.station');
+  if (!filled) setStatus(el.nearby, 'Standort wird ermittelt …');
+
   try {
     const { latitude, longitude } = await currentPosition();
 
-    setStatus(el.nearby, 'Suche Haltestellen …');
+    if (!filled) setStatus(el.nearby, 'Suche Haltestellen …');
     const stations = (await nearbyStations(latitude, longitude, NEARBY_RADIUS_METERS)).slice(
       0,
       NEARBY_MAX_STATIONS
@@ -323,7 +404,7 @@ async function renderNearby() {
     );
     el.nearby.innerHTML = cards.join('');
   } catch (err) {
-    setStatus(el.nearby, `Fehler: ${err.message}`);
+    if (!filled) setStatus(el.nearby, `Fehler: ${err.message}`);
   }
 }
 
@@ -417,6 +498,12 @@ el.favorites.addEventListener('click', (e) => {
     return;
   }
 
+  const row = e.target.closest('[data-trip]');
+  if (row) {
+    toggleTrip(row.dataset);
+    return;
+  }
+
   // <details> opens itself; we only record it so the next refresh keeps it open.
   const summary = e.target.closest('[data-expand]');
   if (!summary) return;
@@ -424,6 +511,33 @@ el.favorites.addEventListener('click', (e) => {
   if (expanded.has(id)) expanded.delete(id);
   else expanded.add(id);
 });
+
+el.nearby.addEventListener('click', (e) => {
+  const row = e.target.closest('[data-trip]');
+  if (row) toggleTrip(row.dataset);
+});
+
+/** Unfolds the whole trip of one departure underneath its row. */
+async function toggleTrip({ trip: key, station, line, destination, planned }) {
+  if (openTrip?.key === key) {
+    openTrip = null;
+    renderActiveView();
+    return;
+  }
+
+  openTrip = { key, state: 'loading' };
+  renderActiveView();
+
+  try {
+    const stops = await tripStops(station, { line, destination, planned: Number(planned) });
+    if (openTrip?.key !== key) return; // something else was opened meanwhile
+    openTrip = { key, state: 'ok', stops };
+  } catch (err) {
+    if (openTrip?.key !== key) return;
+    openTrip = { key, state: 'error', message: `Fahrtverlauf nicht verfügbar: ${err.message}` };
+  }
+  renderActiveView();
+}
 
 function startRename(title) {
   const uid = title.dataset.rename;
@@ -488,7 +602,9 @@ if ('serviceWorker' in navigator) {
     .then((reg) => {
       // Returning to the app is the moment to notice a new deploy.
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') reg.update();
+        if (document.visibilityState !== 'visible') return;
+        // Offline this check simply fails; that is expected, not an error.
+        reg.update().catch((err) => console.debug('Update-Prüfung fehlgeschlagen:', err.message));
       });
     })
     .catch((err) => console.warn('Service Worker nicht registriert:', err));
