@@ -20,6 +20,11 @@ Favourites are kept in `localStorage`. Nearby mode uses the `distanceInMeters`
 the API already returns instead of computing distances, and is capped at six
 stops so one page load stays a handful of requests rather than thirty.
 
+A service worker (`sw.js`) caches the app shell so it starts offline, but always
+asks the network first and bypasses the browser's HTTP cache while doing so —
+GitHub Pages serves the files with `max-age=600`, which would otherwise keep a
+deployed change hidden for ten minutes.
+
 No build step, no dependencies, no framework.
 
 ## Development

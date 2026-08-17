@@ -480,6 +480,20 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') renderActiveView();
 });
 
+// ---- Service worker --------------------------------------------------------
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker
+    .register('sw.js')
+    .then((reg) => {
+      // Returning to the app is the moment to notice a new deploy.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update();
+      });
+    })
+    .catch((err) => console.warn('Service Worker nicht registriert:', err));
+}
+
 syncTabs();
 syncCompact();
 renderActiveView();
