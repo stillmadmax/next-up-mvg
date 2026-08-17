@@ -37,8 +37,29 @@ const el = {
   compact: document.getElementById('compact'),
 };
 
+// ---- Storage ----------------------------------------------------------------
+
+// localStorage belongs to the origin, and on github.io that is the whole
+// account — every project published there shares this namespace. Hence the
+// prefix: another project's "favorites" must not collide with ours.
+const PREFIX = 'nextup:';
+const OWN_KEYS = (key) => key === 'favorites' || key === 'compact' || key.startsWith('routes:');
+
+const store = {
+  get: (key) => localStorage.getItem(PREFIX + key),
+  set: (key, value) => localStorage.setItem(PREFIX + key, value),
+  remove: (key) => localStorage.removeItem(PREFIX + key),
+};
+
+// Earlier versions wrote these keys unprefixed; move them once.
+for (const key of Object.keys(localStorage)) {
+  if (key.startsWith(PREFIX) || !OWN_KEYS(key)) continue;
+  localStorage.setItem(PREFIX + key, localStorage.getItem(key));
+  localStorage.removeItem(key);
+}
+
 let activeView = 'favoriten';
-let compact = localStorage.getItem('compact') === '1';
+let compact = store.get('compact') === '1';
 let refreshTimer = null;
 
 // ---- Favorites (client-side only; one user, one device) ---------------------
@@ -49,7 +70,7 @@ let refreshTimer = null;
 function loadFavorites() {
   let list;
   try {
-    list = JSON.parse(localStorage.getItem('favorites') ?? '[]');
+    list = JSON.parse(store.get('favorites') ?? '[]');
   } catch {
     return [];
   }
@@ -64,7 +85,7 @@ function loadFavorites() {
 }
 
 function saveFavorites(list) {
-  localStorage.setItem('favorites', JSON.stringify(list));
+  store.set('favorites', JSON.stringify(list));
 }
 
 function updateFavorite(uid, change) {
@@ -133,7 +154,7 @@ function stationLinesCached(stationId) {
 
 function knownRoutes(stationId) {
   try {
-    return JSON.parse(localStorage.getItem(`routes:${stationId}`) ?? '[]');
+    return JSON.parse(store.get(`routes:${stationId}`) ?? '[]');
   } catch {
     return [];
   }
@@ -151,7 +172,7 @@ function learnRoutes(stationId, deps) {
     known.push([d.line, d.destination]);
     added = true;
   }
-  if (added) localStorage.setItem(`routes:${stationId}`, JSON.stringify(known));
+  if (added) store.set(`routes:${stationId}`, JSON.stringify(known));
   return known;
 }
 
@@ -422,7 +443,7 @@ function syncCompact() {
 
 el.compact.addEventListener('click', () => {
   compact = !compact;
-  localStorage.setItem('compact', compact ? '1' : '0');
+  store.set('compact', compact ? '1' : '0');
   syncCompact();
   renderFavorites();
 });

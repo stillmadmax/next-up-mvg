@@ -1,4 +1,4 @@
-# Next Up
+# Next Up MVG
 
 A small PWA for the next public transport departures in Munich, built to be
 opened from the home screen and glanced at. Two modes:
