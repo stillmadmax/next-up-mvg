@@ -1,10 +1,10 @@
-// Zugriff auf die inoffizielle MVG-API. Bewusst die einzige Stelle im Projekt,
-// die eine URL kennt: falls MVG die CORS-Header schliesst, wird hier auf einen
-// eigenen Proxy umgestellt, ohne den Rest der App anzufassen.
+// Access to the unofficial MVG API. Deliberately the only place in the project
+// that knows a URL: if MVG closes the CORS headers, this is where we switch to
+// our own proxy, without touching the rest of the app.
 const BASE = 'https://www.mvg.de/api/bgw-pt/v3';
 
-// Die API liefert Zeiten als Millisekunden-Epoch. Im UI rechnen wir in Minuten,
-// also wird hier einmal umgerechnet statt an jeder Anzeigestelle.
+// The API returns times as millisecond epochs. The UI thinks in minutes, so
+// convert once here instead of at every display site.
 function minutesUntil(epochMs) {
   return Math.round((epochMs - Date.now()) / 60000);
 }
@@ -24,21 +24,21 @@ function toStation(raw) {
     name: raw.name,
     place: raw.place,
     transportTypes: raw.transportTypes ?? [],
-    // nur von /stations/nearby geliefert
+    // only provided by /stations/nearby
     distance: raw.distanceInMeters,
   };
 }
 
-/** Haltestellen per Namenssuche. Filtert Adressen und POIs heraus. */
+/** Stations by name search. Filters out addresses and POIs. */
 export async function searchStations(query) {
   const raw = await get('/locations', { query });
   return raw.filter((r) => r.type === 'STATION').map(toStation);
 }
 
 /**
- * Haltestellen in der Umgebung. Die API kennt keinen Radius-Parameter, liefert
- * aber distanceInMeters pro Treffer — damit ist das Filtern exakt und wir
- * brauchen keine eigene Distanzberechnung.
+ * Stations nearby. The API has no radius parameter but returns
+ * distanceInMeters per hit, which makes filtering exact and saves us from
+ * computing distances ourselves.
  */
 export async function nearbyStations(latitude, longitude, radiusMeters) {
   const raw = await get('/stations/nearby', { latitude, longitude });
@@ -48,7 +48,7 @@ export async function nearbyStations(latitude, longitude, radiusMeters) {
     .sort((a, b) => a.distance - b.distance);
 }
 
-/** Naechste Abfahrten einer Haltestelle. */
+/** Next departures for a station. */
 export async function departures(stationId, limit = 10) {
   const raw = await get('/departures', {
     globalId: stationId,
@@ -56,14 +56,14 @@ export async function departures(stationId, limit = 10) {
     offsetInMinutes: 0,
   });
 
-  // Die API behandelt limit als Naeherung und liefert teils einen Eintrag mehr,
-  // deshalb hier hart abschneiden.
+  // The API treats limit as an approximation and sometimes returns one entry
+  // more, so cut it hard here.
   return raw.slice(0, limit).map((d) => ({
     line: d.label,
     destination: d.destination,
     type: d.transportType,
     inMinutes: minutesUntil(d.realtimeDepartureTime),
-    // delayInMinutes fehlt im Normalfall und steht nur bei Abweichung drin
+    // delayInMinutes is absent in the normal case and only set on deviation
     delay: d.delayInMinutes ?? 0,
     cancelled: d.cancelled,
     platform: d.platform,

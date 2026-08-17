@@ -1,7 +1,7 @@
 import { searchStations, nearbyStations, departures } from './api.js';
 
-// Im Naehe-Modus kostet jede Haltestelle einen eigenen Request. Ohne Deckel
-// wird ein Seitenaufruf schnell zu 30 Anfragen gegen eine inoffizielle API.
+// In nearby mode every station costs its own request. Without a cap a single
+// page load turns into ~30 requests against an unofficial API.
 const NEARBY_MAX_STATIONS = 6;
 const NEARBY_RADIUS_METERS = 1000;
 const DEPARTURES_PER_STATION = 4;
@@ -31,7 +31,7 @@ const el = {
 let activeView = 'favoriten';
 let refreshTimer = null;
 
-// ---- Favoriten (nur clientseitig; ein Nutzer, ein Geraet) -------------------
+// ---- Favorites (client-side only; one user, one device) ---------------------
 
 function loadFavorites() {
   try {
@@ -56,7 +56,7 @@ function removeFavorite(id) {
   saveFavorites(loadFavorites().filter((s) => s.id !== id));
 }
 
-// ---- Rendern ---------------------------------------------------------------
+// ---- Rendering -------------------------------------------------------------
 
 function departureRow(d) {
   const color = LINE_COLORS[d.type] ?? '#666';
@@ -163,7 +163,7 @@ function renderActiveView() {
   else renderNearby();
 }
 
-// ---- Suche -----------------------------------------------------------------
+// ---- Search ----------------------------------------------------------------
 
 let searchTimer = null;
 
@@ -174,7 +174,7 @@ el.search.addEventListener('input', () => {
     el.results.innerHTML = '';
     return;
   }
-  // Entprellt, damit nicht jeder Tastendruck einen Request auslöst.
+  // Debounced so not every keystroke fires a request.
   searchTimer = setTimeout(async () => {
     try {
       const stations = await searchStations(query);
@@ -209,7 +209,7 @@ el.favorites.addEventListener('click', (e) => {
   renderFavorites();
 });
 
-// ---- Tabs und Auto-Refresh -------------------------------------------------
+// ---- Tabs and auto refresh -------------------------------------------------
 
 function syncTabs() {
   el.tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === activeView));
@@ -224,8 +224,8 @@ el.tabs.forEach((tab) =>
   })
 );
 
-// Abfahrtszeiten veralten im Sekundentakt, deshalb regelmaessig neu laden —
-// aber nur, solange die Seite sichtbar ist.
+// Departure times go stale by the second, so reload regularly — but only while
+// the page is actually visible.
 function startRefresh() {
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {

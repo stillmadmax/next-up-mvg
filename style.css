@@ -15,7 +15,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  /* Safe-Area, damit im Homescreen-Vollbild nichts unter der Notch klebt */
+  /* Safe area so nothing hides under the notch in home-screen fullscreen */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
 }
