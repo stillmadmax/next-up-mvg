@@ -70,6 +70,15 @@ function stationLinesCached(stationId) {
 
 // ---- Rendering -------------------------------------------------------------
 
+// Everything here builds markup by interpolating strings, and most of those
+// strings come from the API or from a name the user typed. Escape them at every
+// leaf: a station called `Foo & Bar` would otherwise mangle the markup, and a
+// quote in an attribute would let the value break out of it entirely.
+// Values read back via dataset need no counterpart — the parser decodes them.
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 function clockTime(epochMs) {
   return new Date(epochMs).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
@@ -86,18 +95,32 @@ function tripPanel() {
     return '<li class="trip"><p class="status">Fahrtverlauf wird geladen …</p></li>';
   }
   if (openTrip.state === 'error') {
-    return `<li class="trip"><p class="status">${openTrip.message}</p></li>`;
+    return `<li class="trip"><p class="status">${esc(openTrip.message)}</p></li>`;
   }
 
   const stops = openTrip.stops
-    .map((s) => `<li><span class="at">${clockTime(s.at)}</span><span class="stop">${s.name}</span></li>`)
+    .map(
+      (s) =>
+        `<li><span class="at">${clockTime(s.at)}</span><span class="stop">${esc(s.name)}</span></li>`
+    )
     .join('');
   return `<li class="trip"><ol>${stops}</ol><p class="note">Planzeiten</p></li>`;
 }
 
 // Line badge and countdown look the same in both views, so build them once.
 function lineBadge(d) {
-  return `<span class="line" style="background:${LINE_COLORS[d.type] ?? '#666'}">${d.line}</span>`;
+  // hasOwn, not a plain lookup: a transportType of "constructor" or "toString"
+  // would otherwise inherit from Object.prototype and skip the fallback.
+  const color = d.sev
+    ? LINE_COLORS.SEV
+    : Object.hasOwn(LINE_COLORS, d.type)
+      ? LINE_COLORS[d.type]
+      : '#666';
+  // A replacement bus keeps the rail label, so the badge alone would say "U6"
+  // and send you down to a platform with no train. Colour is not enough on its
+  // own — it has to survive colour blindness and a glance — hence the marker.
+  const sev = d.sev ? '<span class="sev" title="Schienenersatzverkehr">SEV</span>' : '';
+  return `<span class="line" style="background:${color}">${esc(d.line)}</span>${sev}`;
 }
 
 function whenLabel(d) {
@@ -112,10 +135,11 @@ function departureRow(d, stationId) {
 
   return `
     <li class="${d.cancelled ? 'cancelled' : ''}${open ? ' open' : ''}">
-      <button class="row" data-trip="${key}" data-station="${stationId}" data-line="${d.line}"
-        data-destination="${d.destination}" data-planned="${d.planned}">
+      <button class="row" data-trip="${esc(key)}" data-station="${esc(stationId)}"
+        data-line="${esc(d.line)}" data-destination="${esc(d.destination)}"
+        data-planned="${d.planned}">
         ${lineBadge(d)}
-        <span class="dest">${d.destination}</span>
+        <span class="dest">${esc(d.destination)}</span>
         ${delay}
         <span class="at">${clockTime(d.at)}</span>
         ${whenLabel(d)}
@@ -138,7 +162,7 @@ function departureList(uid, deps, stationId, collapsible) {
   return `
     <ul>${rows(deps.slice(0, FAVORITE_VISIBLE))}</ul>
     <details ${expanded.has(uid) ? 'open' : ''}>
-      <summary data-expand="${uid}">${rest.length} weitere</summary>
+      <summary data-expand="${esc(uid)}">${rest.length} weitere</summary>
       <ul>${rows(rest)}</ul>
     </details>`;
 }
@@ -148,8 +172,8 @@ function chipRow(uid, attribute, values, selected) {
   return `<div class="lines">${values
     .map(
       (v) =>
-        `<button class="chip${selected.includes(v) ? ' on' : ''}" data-uid="${uid}"
-           data-${attribute}="${v}" aria-pressed="${selected.includes(v)}">${v}</button>`
+        `<button class="chip${selected.includes(v) ? ' on' : ''}" data-uid="${esc(uid)}"
+           data-${attribute}="${esc(v)}" aria-pressed="${selected.includes(v)}">${esc(v)}</button>`
     )
     .join('')}</div>`;
 }
@@ -182,9 +206,9 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
   const sub = favorite?.label ? station.name : distance;
 
   const head = favorite
-    ? `<h2 data-rename="${favorite.uid}">${title}</h2><span class="sub">${sub}</span>
-       <button class="remove" data-remove="${favorite.uid}" aria-label="Favorit entfernen">×</button>`
-    : `<h2>${title}</h2><span class="sub">${sub}</span>`;
+    ? `<h2 data-rename="${esc(favorite.uid)}">${esc(title)}</h2><span class="sub">${esc(sub)}</span>
+       <button class="remove" data-remove="${esc(favorite.uid)}" aria-label="Favorit entfernen">×</button>`
+    : `<h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>`;
 
   const body = deps.length
     ? departureList(favorite?.uid, deps, station.id, collapsible)
@@ -215,12 +239,12 @@ function compactTile(fav, deps) {
 
   const more =
     hidden > 0
-      ? `<button class="more" data-tile="${fav.uid}">${open ? 'weniger' : `${hidden} weitere`}</button>`
+      ? `<button class="more" data-tile="${esc(fav.uid)}">${open ? 'weniger' : `${hidden} weitere`}</button>`
       : '';
 
   return `
     <section class="tile">
-      <h3>${fav.label || fav.name}</h3>
+      <h3>${esc(fav.label || fav.name)}</h3>
       ${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="empty">Keine Abfahrten</p>'}
       ${more}
     </section>`;
@@ -228,7 +252,8 @@ function compactTile(fav, deps) {
 
 function setStatus(container, message) {
   container.className = ''; // a status line is never part of the compact grid
-  container.innerHTML = `<p class="status">${message}</p>`;
+  // Callers pass error texts through here, and those carry API strings.
+  container.innerHTML = `<p class="status">${esc(message)}</p>`;
 }
 
 // ---- Views -----------------------------------------------------------------
@@ -365,11 +390,11 @@ el.search.addEventListener('input', () => {
         .slice(0, 8)
         .map(
           (s) =>
-            `<li><button data-add="${s.id}" data-name="${s.name}" data-place="${s.place}">${s.name}<span>${s.place}</span></button></li>`
+            `<li><button data-add="${esc(s.id)}" data-name="${esc(s.name)}" data-place="${esc(s.place)}">${esc(s.name)}<span>${esc(s.place)}</span></button></li>`
         )
         .join('');
     } catch (err) {
-      el.results.innerHTML = `<li class="status">Fehler: ${err.message}</li>`;
+      el.results.innerHTML = `<li class="status">Fehler: ${esc(err.message)}</li>`;
     }
   }, 300);
 });

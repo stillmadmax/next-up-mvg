@@ -118,6 +118,18 @@ main {
   min-width: 0;
 }
 
+/* A tile is barely wider than its row, so the SEV marker has to give way
+   before the countdown does — that is the part being glanced at. */
+.tile .at,
+.tile .when {
+  white-space: nowrap;
+}
+
+.tile .sev {
+  font-size: 0.55rem;
+  padding: 0 0.15rem;
+}
+
 .more {
   border: 0;
   background: none;
@@ -271,6 +283,20 @@ main {
   border-radius: 0.3rem;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+/* Rail replacement service: the line badge still reads "U6", so this marker
+   carries the actual message. Outlined rather than filled, so it reads as an
+   annotation on the line and not as a second line. */
+.sev {
+  flex: 0 0 auto;
+  border: 1px solid #c8963c;
+  border-radius: 0.25rem;
+  padding: 0 0.2rem;
+  color: #c8963c;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .dest {
