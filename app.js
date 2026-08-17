@@ -206,7 +206,12 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
 }
 
 function compactTile(fav, deps) {
-  const rows = deps.slice(0, COMPACT_DEPARTURES).map((d) => {
+  // Same open/closed state as the list view — it is the same favorite.
+  const open = expanded.has(fav.uid);
+  const visible = open ? deps.length : COMPACT_DEPARTURES;
+  const hidden = deps.length - COMPACT_DEPARTURES;
+
+  const rows = deps.slice(0, visible).map((d) => {
     const color = LINE_COLORS[d.type] ?? '#666';
     const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
     return `
@@ -217,10 +222,16 @@ function compactTile(fav, deps) {
       </li>`;
   });
 
+  const more =
+    hidden > 0
+      ? `<button class="more" data-tile="${fav.uid}">${open ? 'weniger' : `${hidden} weitere`}</button>`
+      : '';
+
   return `
     <section class="tile">
       <h3>${fav.label || fav.name}</h3>
       ${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="empty">Keine Abfahrten</p>'}
+      ${more}
     </section>`;
 }
 
@@ -386,6 +397,16 @@ el.favorites.addEventListener('click', (e) => {
   if (chip) {
     if (chip.dataset.line) toggleLine(chip.dataset.uid, chip.dataset.line);
     else toggleDestination(chip.dataset.uid, chip.dataset.destination);
+    renderFavorites();
+    return;
+  }
+
+  // Tiles are rebuilt on toggle; <details> in the list view opens itself.
+  const tile = e.target.closest('[data-tile]');
+  if (tile) {
+    const uid = tile.dataset.tile;
+    if (expanded.has(uid)) expanded.delete(uid);
+    else expanded.add(uid);
     renderFavorites();
     return;
   }
