@@ -6,6 +6,10 @@ const NEARBY_MAX_STATIONS = 6;
 const NEARBY_RADIUS_METERS = 1000;
 const DEPARTURES_PER_STATION = 4;
 const FAVORITE_DEPARTURES = 10;
+// Filtering happens client-side, so a favorite always fetches a larger batch:
+// it keeps the list full when a line filter throws most departures away, and it
+// is the only way to know which lines a station actually serves.
+const FAVORITE_FETCH = 40;
 const REFRESH_MS = 30000;
 
 const LINE_COLORS = {
@@ -48,12 +52,22 @@ function saveFavorites(list) {
 function addFavorite(station) {
   const list = loadFavorites();
   if (list.some((s) => s.id === station.id)) return;
-  list.push({ id: station.id, name: station.name, place: station.place });
+  // lines: selected line labels; empty means "show everything"
+  list.push({ id: station.id, name: station.name, place: station.place, lines: [] });
   saveFavorites(list);
 }
 
 function removeFavorite(id) {
   saveFavorites(loadFavorites().filter((s) => s.id !== id));
+}
+
+function toggleLine(id, line) {
+  const list = loadFavorites();
+  const fav = list.find((s) => s.id === id);
+  if (!fav) return;
+  const lines = fav.lines ?? [];
+  fav.lines = lines.includes(line) ? lines.filter((l) => l !== line) : [...lines, line];
+  saveFavorites(list);
 }
 
 // ---- Rendering -------------------------------------------------------------
@@ -72,7 +86,24 @@ function departureRow(d) {
     </li>`;
 }
 
-function stationCard(station, deps, { removable = false } = {}) {
+/** Toggle chips for every line seen at the station; active ones are the filter. */
+function lineChips(station, deps) {
+  const selected = station.lines ?? [];
+  const lines = [...new Set(deps.map((d) => d.line))].sort((a, b) =>
+    a.localeCompare(b, 'de', { numeric: true })
+  );
+  if (lines.length < 2) return '';
+
+  return `<div class="lines">${lines
+    .map(
+      (l) =>
+        `<button class="chip${selected.includes(l) ? ' on' : ''}" data-station="${station.id}"
+           data-line="${l}" aria-pressed="${selected.includes(l)}">${l}</button>`
+    )
+    .join('')}</div>`;
+}
+
+function stationCard(station, deps, { removable = false, chips = '' } = {}) {
   const sub = station.distance !== undefined ? `${station.distance} m` : station.place;
   const remove = removable
     ? `<button class="remove" data-remove="${station.id}" aria-label="Favorit entfernen">×</button>`
@@ -85,6 +116,7 @@ function stationCard(station, deps, { removable = false } = {}) {
   return `
     <section class="station">
       <header><h2>${station.name}</h2><span class="sub">${sub}</span>${remove}</header>
+      ${chips}
       ${body}
     </section>`;
 }
@@ -106,8 +138,13 @@ async function renderFavorites() {
   try {
     const cards = await Promise.all(
       favorites.map(async (station) => {
-        const deps = await departures(station.id, FAVORITE_DEPARTURES);
-        return stationCard(station, deps, { removable: true });
+        const all = await departures(station.id, FAVORITE_FETCH);
+        const filter = station.lines ?? [];
+        const shown = (filter.length ? all.filter((d) => filter.includes(d.line)) : all).slice(
+          0,
+          FAVORITE_DEPARTURES
+        );
+        return stationCard(station, shown, { removable: true, chips: lineChips(station, all) });
       })
     );
     el.favorites.innerHTML = cards.join('');
@@ -203,9 +240,16 @@ el.results.addEventListener('click', (e) => {
 });
 
 el.favorites.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-remove]');
-  if (!btn) return;
-  removeFavorite(btn.dataset.remove);
+  const remove = e.target.closest('[data-remove]');
+  if (remove) {
+    removeFavorite(remove.dataset.remove);
+    renderFavorites();
+    return;
+  }
+
+  const chip = e.target.closest('[data-line]');
+  if (!chip) return;
+  toggleLine(chip.dataset.station, chip.dataset.line);
   renderFavorites();
 });
 

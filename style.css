@@ -91,6 +91,28 @@ main {
   padding: 0 0.25rem;
 }
 
+.lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: #ffffff12;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.chip.on {
+  background: var(--accent);
+  color: var(--text);
+}
+
 .station ul {
   list-style: none;
   padding: 0;
