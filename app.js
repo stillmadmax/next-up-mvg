@@ -6,6 +6,8 @@ const NEARBY_MAX_STATIONS = 6;
 const NEARBY_RADIUS_METERS = 1000;
 const DEPARTURES_PER_STATION = 4;
 const FAVORITE_DEPARTURES = 10;
+// Only the next few matter at a glance; the rest sit behind a disclosure.
+const FAVORITE_VISIBLE = 4;
 // Filtering happens client-side, so a favorite always fetches a larger batch:
 // it keeps the list full when a line filter throws most departures away, and it
 // is the only way to know which lines a station actually serves.
@@ -72,6 +74,10 @@ function toggleLine(id, line) {
 
 // ---- Rendering -------------------------------------------------------------
 
+function clockTime(epochMs) {
+  return new Date(epochMs).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
 function departureRow(d) {
   const color = LINE_COLORS[d.type] ?? '#666';
   const when = d.inMinutes <= 0 ? 'jetzt' : `${d.inMinutes} min`;
@@ -82,8 +88,27 @@ function departureRow(d) {
       <span class="line" style="background:${color}">${d.line}</span>
       <span class="dest">${d.destination}</span>
       ${delay}
+      <span class="at">${clockTime(d.at)}</span>
       <span class="when">${d.cancelled ? 'entfällt' : when}</span>
     </li>`;
+}
+
+// Which favorites the user has expanded. Kept in memory only: it is view state,
+// and the auto refresh rebuilds the markup every 30 s.
+const expanded = new Set();
+
+function departureList(station, deps, collapsible) {
+  if (!collapsible || deps.length <= FAVORITE_VISIBLE) {
+    return `<ul>${deps.map(departureRow).join('')}</ul>`;
+  }
+
+  const rest = deps.slice(FAVORITE_VISIBLE);
+  return `
+    <ul>${deps.slice(0, FAVORITE_VISIBLE).map(departureRow).join('')}</ul>
+    <details ${expanded.has(station.id) ? 'open' : ''}>
+      <summary data-expand="${station.id}">${rest.length} weitere</summary>
+      <ul>${rest.map(departureRow).join('')}</ul>
+    </details>`;
 }
 
 /** Toggle chips for every line seen at the station; active ones are the filter. */
@@ -103,14 +128,14 @@ function lineChips(station, deps) {
     .join('')}</div>`;
 }
 
-function stationCard(station, deps, { removable = false, chips = '' } = {}) {
+function stationCard(station, deps, { removable = false, chips = '', collapsible = false } = {}) {
   const sub = station.distance !== undefined ? `${station.distance} m` : station.place;
   const remove = removable
     ? `<button class="remove" data-remove="${station.id}" aria-label="Favorit entfernen">×</button>`
     : '';
 
   const body = deps.length
-    ? `<ul>${deps.map(departureRow).join('')}</ul>`
+    ? departureList(station, deps, collapsible)
     : '<p class="empty">Keine Abfahrten</p>';
 
   return `
@@ -144,7 +169,11 @@ async function renderFavorites() {
           0,
           FAVORITE_DEPARTURES
         );
-        return stationCard(station, shown, { removable: true, chips: lineChips(station, all) });
+        return stationCard(station, shown, {
+          removable: true,
+          chips: lineChips(station, all),
+          collapsible: true,
+        });
       })
     );
     el.favorites.innerHTML = cards.join('');
@@ -248,9 +277,18 @@ el.favorites.addEventListener('click', (e) => {
   }
 
   const chip = e.target.closest('[data-line]');
-  if (!chip) return;
-  toggleLine(chip.dataset.station, chip.dataset.line);
-  renderFavorites();
+  if (chip) {
+    toggleLine(chip.dataset.station, chip.dataset.line);
+    renderFavorites();
+    return;
+  }
+
+  // <details> opens itself; we only record it so the next refresh keeps it open.
+  const summary = e.target.closest('[data-expand]');
+  if (!summary) return;
+  const id = summary.dataset.expand;
+  if (expanded.has(id)) expanded.delete(id);
+  else expanded.add(id);
 });
 
 // ---- Tabs and auto refresh -------------------------------------------------

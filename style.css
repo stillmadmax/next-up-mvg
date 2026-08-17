@@ -151,11 +151,28 @@ main {
   font-weight: 600;
 }
 
+.at {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .when {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   min-width: 3.6rem;
   text-align: right;
+}
+
+.station summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0 0.15rem;
+}
+
+/* The list inside <details> continues the one above it. */
+.station details ul li:first-child {
+  border-top: 1px solid #ffffff12;
 }
 
 .cancelled .dest,
