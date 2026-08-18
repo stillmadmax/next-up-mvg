@@ -95,12 +95,20 @@ card.
 
 A favourite also carries an optional `icon` (one emoji from a fixed palette) and
 an optional `group`. Groups are **derived, not stored separately**: the flat
-favourites list stays the single source of order, and a section is just the run
-of cards sharing a `group`, appearing where its first card does. Favourites
-without a group form the one section with no heading. Two consequences worth
-knowing: a group's cards need not be adjacent in the stored list, and the
-reorder arrows therefore skip over cards of other groups — a section can be
-reordered internally, but a whole section cannot be moved as a unit.
+favourites list stays the single source of order, and a section is the *run* of
+cards sharing a `group`, appearing where its first card does. Favourites without
+a group form the one section with no heading.
+
+That a group is one contiguous run is an invariant, not a coincidence — moving a
+whole section is a swap of two runs, and it only stays predictable if no third
+group is interleaved. `loadFavorites` therefore regroups a list that violates it
+(lists written by the first version of this feature can) and persists the result,
+`setGroup` appends the card to the end of its new section and rewrites the list
+section by section, and `moveFavorite` refuses a swap across a section edge —
+that would change the card's group behind the user's back.
+
+The nameless section has no heading and therefore no arrows of its own; it moves
+only when a named section passes it.
 
 ## Decisions worth remembering
 

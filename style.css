@@ -85,12 +85,22 @@ main {
 /* Section heading over a group of favorites, in both views. Quiet on purpose:
    it labels the block, the departure times stay the loudest thing on screen. */
 .grouphead {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0 0 0.4rem 0.15rem;
+}
+
+/* The arrows sit right after the name, not out at the edge — the heading is a
+   label, and a full-width row of controls would read as a card of its own. */
+.grouphead .move {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.25rem;
 }
 
 /* Only between sections — the first heading sits right under the mode toggle. */

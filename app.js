@@ -5,10 +5,12 @@ import {
   updateFavorite,
   addFavorite,
   moveFavorite,
+  moveSection,
   removeFavorite,
   setGroup,
   setIcon,
   favoriteGroups,
+  favoriteSections,
   toggleLine,
   toggleDestination,
   learnRoutes,
@@ -209,19 +211,6 @@ function filterChips(fav, lines, routes) {
   );
 }
 
-// Favorites are grouped for display only; the stored list stays flat and its
-// order remains the display order. A section appears where its first card does,
-// and the cards without a group form the one section without a heading.
-function favoriteSections(favorites) {
-  const sections = new Map();
-  for (const fav of favorites) {
-    const key = fav.group ?? '';
-    if (!sections.has(key)) sections.set(key, []);
-    sections.get(key).push(fav);
-  }
-  return [...sections];
-}
-
 // Icon and group share one disclosure: the card header already carries title,
 // subtitle, arrows and remove — two more buttons would not fit a phone.
 function editRow(fav, groups) {
@@ -243,6 +232,20 @@ function editRow(fav, groups) {
       <div class="lines">${names}
         <button class="chip" data-newgroup="${esc(fav.uid)}">+ Gruppe</button></div>
     </div>`;
+}
+
+// A section heading carries the same two arrows as a card, one level up. The
+// nameless section has no heading to put them in, so it is only ever moved by
+// another section passing it.
+function sectionHead(name, index, count) {
+  if (!name) return '';
+  const button = (delta, glyph, label) => {
+    const blocked = index + delta < 0 || index + delta >= count;
+    return `<button class="move" data-section="${esc(name)}" data-delta="${delta}"
+       aria-label="${label}"${blocked ? ' disabled' : ''}>${glyph}</button>`;
+  };
+  const move = count > 1 ? button(-1, '▲', 'Gruppe nach oben') + button(1, '▼', 'Gruppe nach unten') : '';
+  return `<h2 class="grouphead">${esc(name)}${move}</h2>`;
 }
 
 // Reordering by arrows, not by dragging: the same two buttons work in the list
@@ -395,10 +398,12 @@ async function renderFavorites() {
 
     el.favorites.className = '';
     el.favorites.innerHTML = sections
-      .map(([name, list]) => {
-        const head = name ? `<h2 class="grouphead">${esc(name)}</h2>` : '';
+      .map(([name, list], index) => {
         const body = list.map((fav) => cards.get(fav.uid)).join('');
-        return head + (compact ? `<div class="grid">${body}</div>` : body);
+        return (
+          sectionHead(name, index, sections.length) +
+          (compact ? `<div class="grid">${body}</div>` : body)
+        );
       })
       .join('');
   } catch (err) {
@@ -518,6 +523,13 @@ el.favorites.addEventListener('click', (e) => {
     if (!fav) return; // already gone; nothing to ask about and nothing to remove
     if (!confirm(`„${fav.label || fav.name}“ aus den Favoriten entfernen?`)) return;
     removeFavorite(fav.uid);
+    renderFavorites();
+    return;
+  }
+
+  const section = e.target.closest('[data-section]');
+  if (section) {
+    moveSection(section.dataset.section, Number(section.dataset.delta));
     renderFavorites();
     return;
   }
