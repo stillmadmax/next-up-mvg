@@ -93,8 +93,8 @@ same stop can appear twice, e.g. "Fahrt heim" and "Fahrt los" with opposite
 directions. Hence each carries a `uid` — the station id no longer identifies a
 card.
 
-A favourite also carries an optional `icon` (one emoji from a fixed palette) and
-an optional `group`. Groups are **derived, not stored separately**: the flat
+A favourite also carries an optional `icon` — one grapheme, picked from a small
+palette or typed by hand — and an optional `group`. Groups are **derived, not stored separately**: the flat
 favourites list stays the single source of order, and a section is the *run* of
 cards sharing a `group`, appearing where its first card does. Favourites without
 a group form the one section with no heading.
