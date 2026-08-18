@@ -32,8 +32,8 @@ const COMPACT_DEPARTURES = 2;
 const FAVORITE_FETCH = 40;
 const REFRESH_MS = 30000;
 
-// A fixed palette rather than free input: it needs no keyboard and looks the
-// same on every platform. The empty entry is the "no icon" chip.
+// The palette covers the common cases with one tap and no keyboard; anything
+// else goes in through the "+" chip. The empty entry is the "no icon" chip.
 const FAVORITE_ICONS = ['', '🏠', '🏢', '🎓', '🛒', '🚉', '🏋️', '❤️', '✈️'];
 
 const LINE_COLORS = {
@@ -211,6 +211,21 @@ function filterChips(fav, lines, routes) {
   );
 }
 
+/**
+ * The first character of what the user typed — and one character is not one code
+ * unit: an emoji can be several, joined by zero-width joiners or followed by a
+ * variation selector, and cutting into that leaves a different glyph or a lone
+ * surrogate. Intl.Segmenter knows where a grapheme ends; where it is missing,
+ * one whole code point is the closest bound we can put on the input.
+ */
+function firstGrapheme(text) {
+  const value = text.trim();
+  if (!value) return '';
+  if (typeof Intl.Segmenter !== 'function') return [...value][0];
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  return [...segmenter.segment(value)][0].segment;
+}
+
 // Icon and group share one disclosure: the card header already carries title,
 // subtitle, arrows and remove — two more buttons would not fit a phone.
 function editRow(fav, groups) {
@@ -218,17 +233,25 @@ function editRow(fav, groups) {
     `<button class="chip${extra}${active ? ' on' : ''}" data-uid="${esc(fav.uid)}"
        data-${attribute}="${esc(value)}" aria-pressed="${active}">${text}</button>`;
 
+  // A hand-typed icon is not in the palette, so it is appended — otherwise the
+  // row would show no selection at all and look like the icon had been lost.
+  const palette = FAVORITE_ICONS.includes(fav.icon ?? '')
+    ? FAVORITE_ICONS
+    : [...FAVORITE_ICONS, fav.icon];
+
   // An emoji needs a square chip, a word needs a wide one.
-  const icons = FAVORITE_ICONS.map((i) =>
-    chip('icon', i, i || 'kein Icon', (fav.icon ?? '') === i, i ? ' glyph' : '')
-  ).join('');
+  const icons = palette
+    .map((i) => chip('icon', i, i || 'kein Icon', (fav.icon ?? '') === i, i ? ' glyph' : ''))
+    .join('');
   const names = groups
     .map((g) => chip('group', g, esc(g), (fav.group ?? '') === g))
     .join('');
 
   return `
     <div class="edit">
-      <div class="lines">${icons}</div>
+      <div class="lines">${icons}
+        <button class="chip glyph" data-newicon="${esc(fav.uid)}"
+          aria-label="Eigenes Icon">+</button></div>
       <div class="lines">${names}
         <button class="chip" data-newgroup="${esc(fav.uid)}">+ Gruppe</button></div>
     </div>`;
@@ -553,6 +576,14 @@ el.favorites.addEventListener('click', (e) => {
   const icon = e.target.closest('[data-icon]');
   if (icon) {
     setIcon(icon.dataset.uid, icon.dataset.icon);
+    renderFavorites();
+    return;
+  }
+
+  const newIcon = e.target.closest('[data-newicon]');
+  if (newIcon) {
+    const icon = firstGrapheme(prompt('Eigenes Icon — ein Emoji oder Zeichen') ?? '');
+    if (icon) setIcon(newIcon.dataset.newicon, icon);
     renderFavorites();
     return;
   }
