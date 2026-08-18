@@ -67,6 +67,17 @@ export function addFavorite(station) {
   saveFavorites(list);
 }
 
+// The list order is the display order, in both views — hence a swap with the
+// neighbour rather than a sort key.
+export function moveFavorite(uid, delta) {
+  const list = loadFavorites();
+  const from = list.findIndex((f) => f.uid === uid);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= list.length) return;
+  [list[from], list[to]] = [list[to], list[from]];
+  saveFavorites(list);
+}
+
 export function removeFavorite(uid) {
   saveFavorites(loadFavorites().filter((f) => f.uid !== uid));
 }
