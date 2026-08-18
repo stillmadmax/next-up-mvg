@@ -61,6 +61,8 @@ export function addFavorite(station) {
     name: station.name,
     place: station.place,
     label: '', // user-given name; empty falls back to the station name
+    icon: '', // emoji shown before the title; empty means none
+    group: '', // section heading; empty means the unnamed section
     lines: [], // selected line labels; empty means "show everything"
     destinations: [], // selected directions, same convention
   });
@@ -68,14 +70,39 @@ export function addFavorite(station) {
 }
 
 // The list order is the display order, in both views — hence a swap with the
-// neighbour rather than a sort key.
+// neighbour rather than a sort key. Sections are only a grouping of this list,
+// so the swap skips over cards of other groups: an arrow must not silently move
+// a card into a section the user did not aim for.
 export function moveFavorite(uid, delta) {
   const list = loadFavorites();
   const from = list.findIndex((f) => f.uid === uid);
-  const to = from + delta;
-  if (from < 0 || to < 0 || to >= list.length) return;
+  if (from < 0) return;
+
+  const group = list[from].group ?? '';
+  const step = Math.sign(delta);
+  let to = from + step;
+  while (to >= 0 && to < list.length && (list[to].group ?? '') !== group) to += step;
+  if (to < 0 || to >= list.length) return;
+
   [list[from], list[to]] = [list[to], list[from]];
   saveFavorites(list);
+}
+
+export function setGroup(uid, group) {
+  updateFavorite(uid, (fav) => (fav.group = group));
+}
+
+export function setIcon(uid, icon) {
+  updateFavorite(uid, (fav) => (fav.icon = icon));
+}
+
+/** Group names in the order their first card appears — that is the section order. */
+export function favoriteGroups() {
+  const names = [];
+  for (const fav of loadFavorites()) {
+    if (fav.group && !names.includes(fav.group)) names.push(fav.group);
+  }
+  return names;
 }
 
 export function removeFavorite(uid) {

@@ -80,7 +80,7 @@ All client-side; one user, one device, no sync.
 | Where | What | Why |
 |---|---|---|
 | `localStorage` | favourites, compact toggle, seen routes per station | Survives reloads. A database would only have created operational work. |
-| Module state in `app.js` | `openTrip`, `expanded`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
+| Module state in `app.js` | `openTrip`, `expanded`, `editing`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
 | `lineCache` (Map) | lines per station | The answer does not change within a session, so ask once. |
 
 Keys are prefixed `nextup:`. On `github.io` the origin is the *whole account*,
@@ -92,6 +92,15 @@ A favourite is a **named, filtered view of a station**, not just a station: the
 same stop can appear twice, e.g. "Fahrt heim" and "Fahrt los" with opposite
 directions. Hence each carries a `uid` — the station id no longer identifies a
 card.
+
+A favourite also carries an optional `icon` (one emoji from a fixed palette) and
+an optional `group`. Groups are **derived, not stored separately**: the flat
+favourites list stays the single source of order, and a section is just the run
+of cards sharing a `group`, appearing where its first card does. Favourites
+without a group form the one section with no heading. Two consequences worth
+knowing: a group's cards need not be adjacent in the stored list, and the
+reorder arrows therefore skip over cards of other groups — a section can be
+reordered internally, but a whole section cannot be moved as a unit.
 
 ## Decisions worth remembering
 

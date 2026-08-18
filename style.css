@@ -79,6 +79,24 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
   gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Section heading over a group of favorites, in both views. Quiet on purpose:
+   it labels the block, the departure times stay the loudest thing on screen. */
+.grouphead {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0 0 0.4rem 0.15rem;
+}
+
+/* Only between sections — the first heading sits right under the mode toggle. */
+.station + .grouphead,
+.grid + .grouphead {
+  margin-top: 0.75rem;
 }
 
 .tile {
@@ -176,6 +194,37 @@ main {
 .station h2 {
   font-size: 1rem;
   font-weight: 600;
+}
+
+.favicon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Icon and group live behind this, so it may stay as quiet as the arrows. */
+.editbtn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.25rem;
+}
+
+/* Set off from the filter chips below, which look the same but do something
+   entirely different. The chip rows inside carry their own bottom margin. */
+.edit {
+  border-left: 2px solid var(--accent);
+  padding-left: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* An emoji sits on a taller line than the 0.8rem chip text, so it needs the
+   room — otherwise the glyph is clipped top and bottom. */
+.chip.glyph {
+  padding: 0.15rem 0.4rem;
+  font-size: 1.15rem;
+  line-height: 1.3;
 }
 
 .rename {
