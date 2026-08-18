@@ -80,7 +80,7 @@ All client-side; one user, one device, no sync.
 | Where | What | Why |
 |---|---|---|
 | `localStorage` | favourites, compact toggle, seen routes per station | Survives reloads. A database would only have created operational work. |
-| Module state in `app.js` | `openTrip`, `expanded`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
+| Module state in `app.js` | `openTrip`, `expanded`, `editing`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
 | `lineCache` (Map) | lines per station | The answer does not change within a session, so ask once. |
 
 Keys are prefixed `nextup:`. On `github.io` the origin is the *whole account*,
@@ -92,6 +92,23 @@ A favourite is a **named, filtered view of a station**, not just a station: the
 same stop can appear twice, e.g. "Fahrt heim" and "Fahrt los" with opposite
 directions. Hence each carries a `uid` — the station id no longer identifies a
 card.
+
+A favourite also carries an optional `icon` (one emoji from a fixed palette) and
+an optional `group`. Groups are **derived, not stored separately**: the flat
+favourites list stays the single source of order, and a section is the *run* of
+cards sharing a `group`, appearing where its first card does. Favourites without
+a group form the one section with no heading.
+
+That a group is one contiguous run is an invariant, not a coincidence — moving a
+whole section is a swap of two runs, and it only stays predictable if no third
+group is interleaved. `loadFavorites` therefore regroups a list that violates it
+(lists written by the first version of this feature can) and persists the result,
+`setGroup` appends the card to the end of its new section and rewrites the list
+section by section, and `moveFavorite` refuses a swap across a section edge —
+that would change the card's group behind the user's back.
+
+The nameless section has no heading and therefore no arrows of its own; it moves
+only when a named section passes it.
 
 ## Decisions worth remembering
 

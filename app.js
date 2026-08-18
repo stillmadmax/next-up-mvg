@@ -5,7 +5,12 @@ import {
   updateFavorite,
   addFavorite,
   moveFavorite,
+  moveSection,
   removeFavorite,
+  setGroup,
+  setIcon,
+  favoriteGroups,
+  favoriteSections,
   toggleLine,
   toggleDestination,
   learnRoutes,
@@ -26,6 +31,10 @@ const COMPACT_DEPARTURES = 2;
 // is the only way to know which lines a station actually serves.
 const FAVORITE_FETCH = 40;
 const REFRESH_MS = 30000;
+
+// A fixed palette rather than free input: it needs no keyboard and looks the
+// same on every platform. The empty entry is the "no icon" chip.
+const FAVORITE_ICONS = ['', '🏠', '🏢', '🎓', '🛒', '🚉', '🏋️', '❤️', '✈️'];
 
 const LINE_COLORS = {
   UBAHN: '#0065ae',
@@ -153,6 +162,9 @@ function departureRow(d, stationId) {
 // and the auto refresh rebuilds the markup every 30 s.
 const expanded = new Set();
 
+// The favorite whose icon/group row is open, at most one — same reasoning.
+let editing = null;
+
 function departureList(uid, deps, stationId, collapsible) {
   const rows = (list) => list.map((d) => departureRow(d, stationId)).join('');
   if (!collapsible || deps.length <= FAVORITE_VISIBLE) {
@@ -199,6 +211,43 @@ function filterChips(fav, lines, routes) {
   );
 }
 
+// Icon and group share one disclosure: the card header already carries title,
+// subtitle, arrows and remove — two more buttons would not fit a phone.
+function editRow(fav, groups) {
+  const chip = (attribute, value, text, active, extra = '') =>
+    `<button class="chip${extra}${active ? ' on' : ''}" data-uid="${esc(fav.uid)}"
+       data-${attribute}="${esc(value)}" aria-pressed="${active}">${text}</button>`;
+
+  // An emoji needs a square chip, a word needs a wide one.
+  const icons = FAVORITE_ICONS.map((i) =>
+    chip('icon', i, i || 'kein Icon', (fav.icon ?? '') === i, i ? ' glyph' : '')
+  ).join('');
+  const names = groups
+    .map((g) => chip('group', g, esc(g), (fav.group ?? '') === g))
+    .join('');
+
+  return `
+    <div class="edit">
+      <div class="lines">${icons}</div>
+      <div class="lines">${names}
+        <button class="chip" data-newgroup="${esc(fav.uid)}">+ Gruppe</button></div>
+    </div>`;
+}
+
+// A section heading carries the same two arrows as a card, one level up. The
+// nameless section has no heading to put them in, so it is only ever moved by
+// another section passing it.
+function sectionHead(name, index, count) {
+  if (!name) return '';
+  const button = (delta, glyph, label) => {
+    const blocked = index + delta < 0 || index + delta >= count;
+    return `<button class="move" data-section="${esc(name)}" data-delta="${delta}"
+       aria-label="${label}"${blocked ? ' disabled' : ''}>${glyph}</button>`;
+  };
+  const move = count > 1 ? button(-1, '▲', 'Gruppe nach oben') + button(1, '▼', 'Gruppe nach unten') : '';
+  return `<h2 class="grouphead">${esc(name)}${move}</h2>`;
+}
+
 // Reordering by arrows, not by dragging: the same two buttons work in the list
 // and in the compact grid, on touch as on a mouse. The glyphs follow the layout
 // the buttons sit in — vertical in the list, horizontal in the grid.
@@ -218,7 +267,7 @@ function moveButtons(uid, index, count, horizontal = false) {
 function stationCard(
   station,
   deps,
-  { favorite = null, chips = '', collapsible = false, move = '' } = {}
+  { favorite = null, chips = '', collapsible = false, move = '', edit = '' } = {}
 ) {
   const distance = station.distance !== undefined ? `${station.distance} m` : station.place;
   // A renamed favorite keeps the station name as its subtitle — otherwise the
@@ -226,8 +275,13 @@ function stationCard(
   const title = favorite?.label || station.name;
   const sub = favorite?.label ? station.name : distance;
 
+  // Outside the <h2>, so tapping the icon does not start a rename.
+  const icon = favorite?.icon ? `<span class="favicon">${esc(favorite.icon)}</span>` : '';
+
   const head = favorite
-    ? `<h2 data-rename="${esc(favorite.uid)}">${esc(title)}</h2><span class="sub">${esc(sub)}</span>
+    ? `${icon}<h2 data-rename="${esc(favorite.uid)}">${esc(title)}</h2><span class="sub">${esc(sub)}</span>
+       <button class="editbtn" data-edit="${esc(favorite.uid)}" aria-label="Icon und Gruppe"
+         aria-expanded="${!!edit}">✎</button>
        ${move}
        <button class="remove" data-remove="${esc(favorite.uid)}" aria-label="Favorit entfernen">×</button>`
     : `<h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>`;
@@ -239,6 +293,7 @@ function stationCard(
   return `
     <section class="station">
       <header>${head}</header>
+      ${edit}
       ${chips}
       ${body}
     </section>`;
@@ -266,7 +321,7 @@ function compactTile(fav, deps, move) {
 
   return `
     <section class="tile">
-      <div class="tilehead"><h3>${esc(fav.label || fav.name)}</h3>${move}</div>
+      <div class="tilehead"><h3>${fav.icon ? `${esc(fav.icon)} ` : ''}${esc(fav.label || fav.name)}</h3>${move}</div>
       ${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="empty">Keine Abfahrten</p>'}
       ${more}
     </section>`;
@@ -300,32 +355,57 @@ async function renderFavorites() {
       return pending.get(id);
     };
 
-    const cards = await Promise.all(
-      favorites.map(async (fav, index) => {
-        const all = await fetchOnce(fav.id);
-        const lines = fav.lines ?? [];
-        const dests = fav.destinations ?? [];
-        const lineFiltered = lines.length ? all.filter((d) => lines.includes(d.line)) : all;
-        const shown = (dests.length
-          ? lineFiltered.filter((d) => dests.includes(d.destination))
-          : lineFiltered
-        ).slice(0, FAVORITE_DEPARTURES);
+    const sections = favoriteSections(favorites);
+    const groups = favoriteGroups();
+    // The arrows reorder inside a section, so their position is the one inside
+    // it — not the index in the flat list.
+    const inSection = new Map();
+    for (const [, list] of sections) {
+      list.forEach((fav, index) => inSection.set(fav.uid, [index, list.length]));
+    }
 
-        const move = moveButtons(fav.uid, index, favorites.length, compact);
-        if (compact) return compactTile(fav, shown, move);
+    const cards = new Map(
+      await Promise.all(
+        favorites.map(async (fav) => {
+          const all = await fetchOnce(fav.id);
+          const lines = fav.lines ?? [];
+          const dests = fav.destinations ?? [];
+          const lineFiltered = lines.length ? all.filter((d) => lines.includes(d.line)) : all;
+          const shown = (dests.length
+            ? lineFiltered.filter((d) => dests.includes(d.destination))
+            : lineFiltered
+          ).slice(0, FAVORITE_DEPARTURES);
 
-        const known = await stationLinesCached(fav.id);
-        const routes = learnRoutes(fav.id, all);
-        return stationCard(fav, shown, {
-          favorite: fav,
-          chips: filterChips(fav, [...known, ...all.map((d) => d.line)], routes),
-          collapsible: true,
-          move,
-        });
-      })
+          const [index, count] = inSection.get(fav.uid);
+          const move = moveButtons(fav.uid, index, count, compact);
+          if (compact) return [fav.uid, compactTile(fav, shown, move)];
+
+          const known = await stationLinesCached(fav.id);
+          const routes = learnRoutes(fav.id, all);
+          return [
+            fav.uid,
+            stationCard(fav, shown, {
+              favorite: fav,
+              chips: filterChips(fav, [...known, ...all.map((d) => d.line)], routes),
+              collapsible: true,
+              move,
+              edit: editing === fav.uid ? editRow(fav, groups) : '',
+            }),
+          ];
+        })
+      )
     );
-    el.favorites.className = compact ? 'grid' : '';
-    el.favorites.innerHTML = cards.join('');
+
+    el.favorites.className = '';
+    el.favorites.innerHTML = sections
+      .map(([name, list], index) => {
+        const body = list.map((fav) => cards.get(fav.uid)).join('');
+        return (
+          sectionHead(name, index, sections.length) +
+          (compact ? `<div class="grid">${body}</div>` : body)
+        );
+      })
+      .join('');
   } catch (err) {
     // On a refresh, keep what is on screen — a hiccup should not wipe the list.
     if (!filled) setStatus(el.favorites, `Fehler: ${err.message}`);
@@ -447,6 +527,13 @@ el.favorites.addEventListener('click', (e) => {
     return;
   }
 
+  const section = e.target.closest('[data-section]');
+  if (section) {
+    moveSection(section.dataset.section, Number(section.dataset.delta));
+    renderFavorites();
+    return;
+  }
+
   const move = e.target.closest('[data-move]');
   if (move) {
     moveFavorite(move.dataset.move, Number(move.dataset.delta));
@@ -454,10 +541,44 @@ el.favorites.addEventListener('click', (e) => {
     return;
   }
 
+  const edit = e.target.closest('[data-edit]');
+  if (edit) {
+    editing = editing === edit.dataset.edit ? null : edit.dataset.edit;
+    renderFavorites();
+    return;
+  }
+
+  // Icon and group chips carry .chip too, so they are handled before the
+  // filter chips below — otherwise they would fall through to the filters.
+  const icon = e.target.closest('[data-icon]');
+  if (icon) {
+    setIcon(icon.dataset.uid, icon.dataset.icon);
+    renderFavorites();
+    return;
+  }
+
+  const group = e.target.closest('[data-group]');
+  if (group) {
+    const uid = group.dataset.uid;
+    const current = loadFavorites().find((f) => f.uid === uid)?.group ?? '';
+    // Tapping the active group again is how a favorite leaves it.
+    setGroup(uid, current === group.dataset.group ? '' : group.dataset.group);
+    renderFavorites();
+    return;
+  }
+
+  const newGroup = e.target.closest('[data-newgroup]');
+  if (newGroup) {
+    const name = prompt('Name der Gruppe')?.trim();
+    if (name) setGroup(newGroup.dataset.newgroup, name);
+    renderFavorites();
+    return;
+  }
+
   const chip = e.target.closest('.chip');
   if (chip) {
     if (chip.dataset.line) toggleLine(chip.dataset.uid, chip.dataset.line);
-    else toggleDestination(chip.dataset.uid, chip.dataset.destination);
+    else if (chip.dataset.destination) toggleDestination(chip.dataset.uid, chip.dataset.destination);
     renderFavorites();
     return;
   }

@@ -38,7 +38,36 @@ export function loadFavorites() {
     list.forEach((f, i) => (f.uid ??= `${f.id}-${i}`));
     saveFavorites(list);
   }
+
+  // Groups were introduced without this guarantee, so a list saved then can
+  // interleave them. Everything below relies on a group being one run.
+  const grouped = flatten(favoriteSections(list));
+  if (grouped.some((f, i) => f !== list[i])) {
+    saveFavorites(grouped);
+    return grouped;
+  }
   return list;
+}
+
+/**
+ * The favorites grouped into display sections, in section order: a group sits
+ * where its first card does, and the cards without one form the section with no
+ * name. The flat list stays the single source of order — a section is only a run
+ * of it, which is what lets a whole section move by swapping two runs.
+ */
+export function favoriteSections(list) {
+  const sections = new Map();
+  for (const fav of list) {
+    const key = fav.group ?? '';
+    if (!sections.has(key)) sections.set(key, []);
+    sections.get(key).push(fav);
+  }
+  return [...sections];
+}
+
+// Empty sections disappear on their own — a run of nothing contributes nothing.
+function flatten(sections) {
+  return sections.flatMap(([, items]) => items);
 }
 
 function saveFavorites(list) {
@@ -61,6 +90,8 @@ export function addFavorite(station) {
     name: station.name,
     place: station.place,
     label: '', // user-given name; empty falls back to the station name
+    icon: '', // emoji shown before the title; empty means none
+    group: '', // section heading; empty means the unnamed section
     lines: [], // selected line labels; empty means "show everything"
     destinations: [], // selected directions, same convention
   });
@@ -72,10 +103,57 @@ export function addFavorite(station) {
 export function moveFavorite(uid, delta) {
   const list = loadFavorites();
   const from = list.findIndex((f) => f.uid === uid);
-  const to = from + delta;
+  const to = from + Math.sign(delta);
   if (from < 0 || to < 0 || to >= list.length) return;
+  // At the edge of its section the neighbour belongs to another group. Moving
+  // the card there would change its group behind the user's back; that is what
+  // moveSection and the group chips are for.
+  if ((list[to].group ?? '') !== (list[from].group ?? '')) return;
+
   [list[from], list[to]] = [list[to], list[from]];
   saveFavorites(list);
+}
+
+/** Swaps a whole section with its neighbouring one, cards and all. */
+export function moveSection(group, delta) {
+  const sections = favoriteSections(loadFavorites());
+  const from = sections.findIndex(([name]) => name === group);
+  const to = from + Math.sign(delta);
+  if (from < 0 || to < 0 || to >= sections.length) return;
+
+  [sections[from], sections[to]] = [sections[to], sections[from]];
+  saveFavorites(flatten(sections));
+}
+
+// The card joins its new section at the end, and the list is rewritten section
+// by section: otherwise a card keeping its old index would drag the section
+// order with it — a group is where its *first* card is.
+export function setGroup(uid, group) {
+  const list = loadFavorites();
+  const fav = list.find((f) => f.uid === uid);
+  if (!fav) return;
+
+  const sections = favoriteSections(list).map(([name, items]) => [
+    name,
+    items.filter((f) => f.uid !== uid),
+  ]);
+  fav.group = group;
+  const target = sections.find(([name]) => name === group);
+  if (target) target[1].push(fav);
+  else sections.push([group, [fav]]);
+
+  saveFavorites(flatten(sections));
+}
+
+export function setIcon(uid, icon) {
+  updateFavorite(uid, (fav) => (fav.icon = icon));
+}
+
+/** The named sections, in section order. */
+export function favoriteGroups() {
+  return favoriteSections(loadFavorites())
+    .map(([name]) => name)
+    .filter(Boolean);
 }
 
 export function removeFavorite(uid) {
