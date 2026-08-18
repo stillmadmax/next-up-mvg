@@ -4,6 +4,7 @@ import {
   loadFavorites,
   updateFavorite,
   addFavorite,
+  moveFavorite,
   removeFavorite,
   toggleLine,
   toggleDestination,
@@ -198,7 +199,27 @@ function filterChips(fav, lines, routes) {
   );
 }
 
-function stationCard(station, deps, { favorite = null, chips = '', collapsible = false } = {}) {
+// Reordering by arrows, not by dragging: the same two buttons work in the list
+// and in the compact grid, on touch as on a mouse. The glyphs follow the layout
+// the buttons sit in — vertical in the list, horizontal in the grid.
+function moveButtons(uid, index, count, horizontal = false) {
+  if (count < 2) return '';
+  const button = (delta, glyph, label) => {
+    const blocked = index + delta < 0 || index + delta >= count;
+    return `<button class="move" data-move="${esc(uid)}" data-delta="${delta}"
+       aria-label="${label}"${blocked ? ' disabled' : ''}>${glyph}</button>`;
+  };
+
+  return horizontal
+    ? button(-1, '‹', 'Nach vorne') + button(1, '›', 'Nach hinten')
+    : button(-1, '▲', 'Nach oben') + button(1, '▼', 'Nach unten');
+}
+
+function stationCard(
+  station,
+  deps,
+  { favorite = null, chips = '', collapsible = false, move = '' } = {}
+) {
   const distance = station.distance !== undefined ? `${station.distance} m` : station.place;
   // A renamed favorite keeps the station name as its subtitle — otherwise the
   // card no longer says where "Fahrt heim" actually departs.
@@ -207,6 +228,7 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
 
   const head = favorite
     ? `<h2 data-rename="${esc(favorite.uid)}">${esc(title)}</h2><span class="sub">${esc(sub)}</span>
+       ${move}
        <button class="remove" data-remove="${esc(favorite.uid)}" aria-label="Favorit entfernen">×</button>`
     : `<h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>`;
 
@@ -222,7 +244,7 @@ function stationCard(station, deps, { favorite = null, chips = '', collapsible =
     </section>`;
 }
 
-function compactTile(fav, deps) {
+function compactTile(fav, deps, move) {
   // Same open/closed state as the list view — it is the same favorite.
   const open = expanded.has(fav.uid);
   const visible = open ? deps.length : COMPACT_DEPARTURES;
@@ -244,7 +266,7 @@ function compactTile(fav, deps) {
 
   return `
     <section class="tile">
-      <h3>${esc(fav.label || fav.name)}</h3>
+      <div class="tilehead"><h3>${esc(fav.label || fav.name)}</h3>${move}</div>
       ${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="empty">Keine Abfahrten</p>'}
       ${more}
     </section>`;
@@ -279,7 +301,7 @@ async function renderFavorites() {
     };
 
     const cards = await Promise.all(
-      favorites.map(async (fav) => {
+      favorites.map(async (fav, index) => {
         const all = await fetchOnce(fav.id);
         const lines = fav.lines ?? [];
         const dests = fav.destinations ?? [];
@@ -289,7 +311,8 @@ async function renderFavorites() {
           : lineFiltered
         ).slice(0, FAVORITE_DEPARTURES);
 
-        if (compact) return compactTile(fav, shown);
+        const move = moveButtons(fav.uid, index, favorites.length, compact);
+        if (compact) return compactTile(fav, shown, move);
 
         const known = await stationLinesCached(fav.id);
         const routes = learnRoutes(fav.id, all);
@@ -297,6 +320,7 @@ async function renderFavorites() {
           favorite: fav,
           chips: filterChips(fav, [...known, ...all.map((d) => d.line)], routes),
           collapsible: true,
+          move,
         });
       })
     );
@@ -413,7 +437,19 @@ el.results.addEventListener('click', (e) => {
 el.favorites.addEventListener('click', (e) => {
   const remove = e.target.closest('[data-remove]');
   if (remove) {
-    removeFavorite(remove.dataset.remove);
+    // The × sits next to the title on a small screen, so a stray tap is easy
+    // and the loss — name, line and direction filters — is not undoable.
+    const fav = loadFavorites().find((f) => f.uid === remove.dataset.remove);
+    if (!fav) return; // already gone; nothing to ask about and nothing to remove
+    if (!confirm(`„${fav.label || fav.name}“ aus den Favoriten entfernen?`)) return;
+    removeFavorite(fav.uid);
+    renderFavorites();
+    return;
+  }
+
+  const move = e.target.closest('[data-move]');
+  if (move) {
+    moveFavorite(move.dataset.move, Number(move.dataset.delta));
     renderFavorites();
     return;
   }
