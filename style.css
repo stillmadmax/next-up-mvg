@@ -129,11 +129,19 @@ main {
   padding: 0;
 }
 
+/* A little more air than the density alone would want: the row is a tap target
+   now, and a mistap leaves compact mode. */
 .tile li {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.2rem 0;
+  padding: 0.3rem 0;
+}
+
+/* The row inside a tile carries the layout the <li> would otherwise, at the
+   tighter spacing a ~9.5rem tile needs. */
+.tile .row {
+  gap: 0.35rem;
 }
 
 .tile .line {
