@@ -20,16 +20,18 @@ import {
 // page load turns into ~30 requests against an unofficial API.
 const NEARBY_MAX_STATIONS = 6;
 const NEARBY_RADIUS_METERS = 1000;
-const DEPARTURES_PER_STATION = 4;
+const NEARBY_DEPARTURES = 10;
 const FAVORITE_DEPARTURES = 10;
 // Only the next few matter at a glance; the rest sit behind a disclosure.
 const FAVORITE_VISIBLE = 4;
 // Compact mode is for a glance: one tile per favorite, side by side.
 const COMPACT_DEPARTURES = 2;
-// Filtering happens client-side, so a favorite always fetches a larger batch:
-// it keeps the list full when a line filter throws most departures away, and it
-// is the only way to know which lines a station actually serves.
+// Filtering happens client-side, so a card always fetches a larger batch: it
+// keeps the list full when a line filter throws most departures away, and it is
+// the only way to know which lines a station actually serves. Nearby fetches a
+// smaller one — six stations at once, and nothing there is filtered for long.
 const FAVORITE_FETCH = 40;
+const NEARBY_FETCH = 25;
 const REFRESH_MS = 30000;
 
 // The palette covers the common cases with one tap and no keyboard; anything
@@ -191,23 +193,42 @@ function chipRow(uid, attribute, values, selected) {
     .join('')}</div>`;
 }
 
+// An empty list means "everything", in both views — hence no branch on "is a
+// filter set", only on whether it selects anything.
+function applyFilters(deps, { lines = [], destinations = [] }) {
+  const byLine = lines.length ? deps.filter((d) => lines.includes(d.line)) : deps;
+  return destinations.length ? byLine.filter((d) => destinations.includes(d.destination)) : byLine;
+}
+
+function flip(list, value) {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+}
+
 /**
  * One row of line chips, one of direction chips; both filters apply together.
  * Both rows list what the station is known to serve, not only what departs in
  * the next hour. Picking a line narrows the second row to that line's
  * directions.
+ *
+ * `directionsAfterLine` holds the second row back until a line is picked. A hub
+ * serves a dozen lines to twenty destinations, and both rows at once push the
+ * departures off the screen — bearable on a favorite the user set up on purpose,
+ * not in a view meant for a glance.
  */
-function filterChips(fav, lines, routes) {
+function filterChips(view, lines, routes, { directionsAfterLine = false } = {}) {
   const sorted = (list) =>
     [...new Set(list)].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
-  const selectedLines = fav.lines ?? [];
+  const selectedLines = view.lines ?? [];
   const directions = routes
     .filter(([line]) => !selectedLines.length || selectedLines.includes(line))
     .map(([, destination]) => destination);
 
+  const showDirections = !directionsAfterLine || selectedLines.length > 0;
   return (
-    chipRow(fav.uid, 'line', sorted(lines), selectedLines) +
-    chipRow(fav.uid, 'destination', sorted(directions), fav.destinations ?? [])
+    chipRow(view.uid, 'line', sorted(lines), selectedLines) +
+    (showDirections
+      ? chipRow(view.uid, 'destination', sorted(directions), view.destinations ?? [])
+      : '')
   );
 }
 
@@ -290,7 +311,14 @@ function moveButtons(uid, index, count, horizontal = false) {
 function stationCard(
   station,
   deps,
-  { favorite = null, chips = '', collapsible = false, move = '', edit = '' } = {}
+  {
+    favorite = null,
+    key = favorite?.uid,
+    chips = '',
+    collapsible = false,
+    move = '',
+    edit = '',
+  } = {}
 ) {
   const distance = station.distance !== undefined ? `${station.distance} m` : station.place;
   // A renamed favorite keeps the station name as its subtitle — otherwise the
@@ -310,7 +338,7 @@ function stationCard(
     : `<h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>`;
 
   const body = deps.length
-    ? departureList(favorite?.uid, deps, station.id, collapsible)
+    ? departureList(key, deps, station.id, collapsible)
     : '<p class="empty">Keine Abfahrten</p>';
 
   return `
@@ -391,13 +419,7 @@ async function renderFavorites() {
       await Promise.all(
         favorites.map(async (fav) => {
           const all = await fetchOnce(fav.id);
-          const lines = fav.lines ?? [];
-          const dests = fav.destinations ?? [];
-          const lineFiltered = lines.length ? all.filter((d) => lines.includes(d.line)) : all;
-          const shown = (dests.length
-            ? lineFiltered.filter((d) => dests.includes(d.destination))
-            : lineFiltered
-          ).slice(0, FAVORITE_DEPARTURES);
+          const shown = applyFilters(all, fav).slice(0, FAVORITE_DEPARTURES);
 
           const [index, count] = inSection.get(fav.uid);
           const move = moveButtons(fav.uid, index, count, compact);
@@ -449,7 +471,28 @@ function currentPosition() {
   });
 }
 
-async function renderNearby() {
+// The stations last found, with their departures. Nearby is the one view whose
+// data costs a location fix, so it is kept: a filter chip, a disclosure or a
+// trip must repaint from this and not send the user through geolocation again.
+let nearby = null;
+
+// Line and direction filters per nearby station, deliberately in memory only.
+// The view answers "what leaves here, now" — the next location fix brings a
+// different set of stations anyway, and nothing here is worth persisting.
+const nearbyFilters = new Map();
+
+// Prefixed so it cannot collide with a favorite's uid in the shared `expanded`
+// set, and so the key says which view it belongs to.
+function nearbyKey(stationId) {
+  return `nah:${stationId}`;
+}
+
+function nearbyFilter(key) {
+  if (!nearbyFilters.has(key)) nearbyFilters.set(key, { lines: [], destinations: [] });
+  return nearbyFilters.get(key);
+}
+
+async function loadNearby() {
   const filled = !!el.nearby.querySelector('.station');
   if (!filled) setStatus(el.nearby, 'Standort wird ermittelt …');
 
@@ -463,27 +506,62 @@ async function renderNearby() {
     );
 
     if (!stations.length) {
+      nearby = null;
       setStatus(el.nearby, `Keine Haltestelle im Umkreis von ${NEARBY_RADIUS_METERS} m.`);
       return;
     }
 
-    const cards = await Promise.all(
-      stations.map(async (station) => {
-        const deps = await departures(station.id, DEPARTURES_PER_STATION);
-        return stationCard(station, deps);
-      })
+    nearby = await Promise.all(
+      stations.map(async (station) => ({
+        station,
+        deps: await departures(station.id, NEARBY_FETCH),
+      }))
     );
-    el.nearby.innerHTML = cards.join('');
+    paintNearby();
   } catch (err) {
     if (!filled) setStatus(el.nearby, `Fehler: ${err.message}`);
   }
+}
+
+function paintNearby() {
+  if (!nearby) return;
+
+  el.nearby.innerHTML = nearby
+    .map(({ station, deps }) => {
+      const key = nearbyKey(station.id);
+      const filter = nearbyFilter(key);
+      // The chips list what is in this batch, not what the station is known to
+      // serve: asking the lines endpoint would cost a request per station, and a
+      // glance at the next hour is what this view is for.
+      const routes = deps.map((d) => [d.line, d.destination]);
+
+      return stationCard(station, applyFilters(deps, filter).slice(0, NEARBY_DEPARTURES), {
+        key,
+        chips: filterChips(
+          { uid: key, ...filter },
+          deps.map((d) => d.line),
+          routes,
+          { directionsAfterLine: true }
+        ),
+        collapsible: true,
+      });
+    })
+    .join('');
 }
 
 function renderActiveView() {
   // A rebuild would throw away a half-typed name.
   if (document.querySelector('.rename')) return;
   if (activeView === 'favoriten') renderFavorites();
-  else renderNearby();
+  else loadNearby();
+}
+
+// What an interaction does: the favorites list rebuilds from localStorage and
+// re-reads departures, but nearby must not fetch again — its data hangs off a
+// location fix, and re-running that on a chip tap would stall the view.
+function repaintActiveView() {
+  if (activeView === 'favoriten') renderFavorites();
+  else paintNearby();
 }
 
 function syncCompact() {
@@ -645,20 +723,45 @@ el.favorites.addEventListener('click', (e) => {
 });
 
 el.nearby.addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (chip) {
+    const filter = nearbyFilter(chip.dataset.uid);
+    if (chip.dataset.line) {
+      filter.lines = flip(filter.lines, chip.dataset.line);
+      // A direction belongs to a line, so a changed line filter can leave a
+      // selected direction invisible — and then unselectable. Reset it instead.
+      filter.destinations = [];
+    } else if (chip.dataset.destination) {
+      filter.destinations = flip(filter.destinations, chip.dataset.destination);
+    }
+    paintNearby();
+    return;
+  }
+
   const row = e.target.closest('[data-trip]');
-  if (row) toggleTrip(row.dataset);
+  if (row) {
+    toggleTrip(row.dataset);
+    return;
+  }
+
+  // <details> opens itself; we only record it so the next refresh keeps it open.
+  const summary = e.target.closest('[data-expand]');
+  if (!summary) return;
+  const id = summary.dataset.expand;
+  if (expanded.has(id)) expanded.delete(id);
+  else expanded.add(id);
 });
 
 /** Unfolds the whole trip of one departure underneath its row. */
 async function toggleTrip({ trip: key, station, line, destination, planned }) {
   if (openTrip?.key === key) {
     openTrip = null;
-    renderActiveView();
+    repaintActiveView();
     return;
   }
 
   openTrip = { key, state: 'loading' };
-  renderActiveView();
+  repaintActiveView();
 
   try {
     const stops = await tripStops(station, { line, destination, planned: Number(planned) });
@@ -668,7 +771,7 @@ async function toggleTrip({ trip: key, station, line, destination, planned }) {
     if (openTrip?.key !== key) return;
     openTrip = { key, state: 'error', message: `Fahrtverlauf nicht verfügbar: ${err.message}` };
   }
-  renderActiveView();
+  repaintActiveView();
 }
 
 function startRename(title) {
