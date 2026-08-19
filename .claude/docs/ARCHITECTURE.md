@@ -81,6 +81,7 @@ All client-side; one user, one device, no sync.
 |---|---|---|
 | `localStorage` | favourites, compact toggle, seen routes per station | Survives reloads. A database would only have created operational work. |
 | Module state in `app.js` | `openTrip`, `expanded`, `editing`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
+| `nearby`, `nearbyFilters` (`app.js`) | last stations found with their departures, and the line/direction filter per station | Nearby is the one view whose data costs a location fix, so an interaction repaints from this instead of re-locating. Its filters stay transient on purpose: the view answers "what leaves here, now", and the next fix brings other stations. |
 | `lineCache` (Map) | lines per station | The answer does not change within a session, so ask once. |
 
 Keys are prefixed `nextup:`. On `github.io` the origin is the *whole account*,
@@ -115,6 +116,12 @@ only when a named section passes it.
 - **Six stations max in nearby mode**, radius 1000 m. Each station costs its own
   departures request; without the cap one page load becomes ~30 requests against
   an unofficial API.
+- **Nearby holds its direction chips back until a line is picked**, unlike a
+  favourite, which shows both rows at once. A hub serves a dozen lines to twenty
+  destinations; both rows push the departures off a phone screen, which is
+  bearable on a card the user configured on purpose and not in a view meant for a
+  glance. Its chips also list only what is in the fetched batch — asking the lines
+  endpoint would cost one more request per station, six per location fix.
 - **`distanceInMeters` instead of Haversine.** `/stations/nearby` returns the
   distance per hit, so filtering is exact rather than recomputed.
 - **`limit` is cut hard client-side.** The API treats it as an approximation and
