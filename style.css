@@ -96,11 +96,18 @@ main {
   margin: 0 0 0.4rem 0.15rem;
 }
 
-/* The arrows sit right after the name, not out at the edge — the heading is a
-   label, and a full-width row of controls would read as a card of its own. */
-.grouphead .move {
+/* The arrows and the pencil sit right after the name, not out at the edge — the
+   heading is a label, and a full-width row of controls would read as a card of
+   its own. */
+.grouphead .move,
+.grouphead .editbtn {
   font-size: 0.7rem;
   padding: 0.3rem 0.25rem;
+}
+
+/* Scaled to the 0.7rem heading; at full size the emoji would tower over it. */
+.grouphead .favicon {
+  font-size: 0.85rem;
 }
 
 /* Only between sections — the first heading sits right under the mode toggle. */

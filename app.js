@@ -9,6 +9,8 @@ import {
   removeFavorite,
   setGroup,
   setIcon,
+  groupIcons,
+  setGroupIcon,
   favoriteGroups,
   favoriteSections,
   toggleLine,
@@ -172,6 +174,10 @@ const expanded = new Set();
 // The favorite whose icon/group row is open, at most one — same reasoning.
 let editing = null;
 
+// The section heading whose icon row is open. Separate from `editing`: a group is
+// not a favorite, and a name cannot collide with a uid.
+let editingGroup = null;
+
 function departureList(uid, deps, stationId, collapsible) {
   const rows = (list) => list.map((d) => departureRow(d, stationId)).join('');
   if (!collapsible || deps.length <= FAVORITE_VISIBLE) {
@@ -283,18 +289,50 @@ function editRow(fav, groups) {
     </div>`;
 }
 
-// A section heading carries the same two arrows as a card, one level up. The
-// nameless section has no heading to put them in, so it is only ever moved by
-// another section passing it.
-function sectionHead(name, index, count) {
+// The group's own icon row. Same palette and same "+" as a favorite's, but keyed
+// by the group name instead of a uid — hence its own attributes, so the handlers
+// cannot mistake one for the other.
+function groupIconRow(name, current) {
+  const chip = (value, text, extra = '') =>
+    `<button class="chip${extra}${current === value ? ' on' : ''}"
+       data-gicon="${esc(value)}" data-gname="${esc(name)}"
+       aria-pressed="${current === value}">${text}</button>`;
+
+  const icons = FAVORITE_ICONS.includes(current ?? '')
+    ? FAVORITE_ICONS
+    : [...FAVORITE_ICONS, current];
+
+  return `
+    <div class="edit">
+      <div class="lines">${icons
+        .map((i) => chip(i, i || 'kein Icon', i ? ' glyph' : ''))
+        .join('')}
+        <button class="chip glyph" data-gnewicon="${esc(name)}"
+          aria-label="Eigenes Icon">+</button></div>
+    </div>`;
+}
+
+// A section heading carries the same two arrows as a card, one level up, plus its
+// own icon. The nameless section has no heading to put any of it in, so it is
+// only ever moved by another section passing it, and it stays without an icon.
+function sectionHead(name, index, count, icons) {
   if (!name) return '';
   const button = (delta, glyph, label) => {
     const blocked = index + delta < 0 || index + delta >= count;
     return `<button class="move" data-section="${esc(name)}" data-delta="${delta}"
        aria-label="${label}"${blocked ? ' disabled' : ''}>${glyph}</button>`;
   };
-  const move = count > 1 ? button(-1, '▲', 'Gruppe nach oben') + button(1, '▼', 'Gruppe nach unten') : '';
-  return `<h2 class="grouphead">${esc(name)}${move}</h2>`;
+  const move =
+    count > 1 ? button(-1, '▲', 'Gruppe nach oben') + button(1, '▼', 'Gruppe nach unten') : '';
+  const icon = icons[name] ? `<span class="favicon">${esc(icons[name])}</span>` : '';
+  const open = editingGroup === name;
+
+  return (
+    `<h2 class="grouphead">${icon}${esc(name)}
+       <button class="editbtn" data-gedit="${esc(name)}" aria-label="Icon der Gruppe"
+         aria-expanded="${open}">✎</button>${move}</h2>` +
+    (open ? groupIconRow(name, icons[name] ?? '') : '')
+  );
 }
 
 // Reordering by arrows, not by dragging: the same two buttons work in the list
@@ -417,6 +455,7 @@ async function renderFavorites() {
 
     const sections = favoriteSections(favorites);
     const groups = favoriteGroups();
+    const icons = groupIcons();
     // The arrows reorder inside a section, so their position is the one inside
     // it — not the index in the flat list.
     const inSection = new Map();
@@ -455,7 +494,7 @@ async function renderFavorites() {
       .map(([name, list], index) => {
         const body = list.map((fav) => cards.get(fav.uid)).join('');
         return (
-          sectionHead(name, index, sections.length) +
+          sectionHead(name, index, sections.length, icons) +
           (compact ? `<div class="grid">${body}</div>` : body)
         );
       })
@@ -640,6 +679,28 @@ el.favorites.addEventListener('click', (e) => {
     if (!fav) return; // already gone; nothing to ask about and nothing to remove
     if (!confirm(`„${fav.label || fav.name}“ aus den Favoriten entfernen?`)) return;
     removeFavorite(fav.uid);
+    renderFavorites();
+    return;
+  }
+
+  const groupEdit = e.target.closest('[data-gedit]');
+  if (groupEdit) {
+    editingGroup = editingGroup === groupEdit.dataset.gedit ? null : groupEdit.dataset.gedit;
+    renderFavorites();
+    return;
+  }
+
+  const groupIcon = e.target.closest('[data-gicon]');
+  if (groupIcon) {
+    setGroupIcon(groupIcon.dataset.gname, groupIcon.dataset.gicon);
+    renderFavorites();
+    return;
+  }
+
+  const groupNewIcon = e.target.closest('[data-gnewicon]');
+  if (groupNewIcon) {
+    const icon = firstGrapheme(prompt('Eigenes Icon für die Gruppe') ?? '');
+    if (icon) setGroupIcon(groupNewIcon.dataset.gnewicon, icon);
     renderFavorites();
     return;
   }
