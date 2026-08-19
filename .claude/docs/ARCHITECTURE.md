@@ -83,7 +83,7 @@ All client-side; one user, one device, no sync.
 
 | Where | What | Why |
 |---|---|---|
-| `localStorage` | favourites, compact toggle, seen routes per station | Survives reloads. A database would only have created operational work. |
+| `localStorage` | favourites, compact toggle, seen routes per station, one icon per group name | Survives reloads. A database would only have created operational work. |
 | Module state in `app.js` | `openTrip`, `expanded`, `editing`, `activeView` | Pure view state, thrown away on reload — and the 30 s refresh rebuilds the markup anyway. |
 | `nearby`, `nearbyFilters` (`app.js`) | last stations found with their departures, and the line/direction filter per station | Nearby is the one view whose data costs a location fix, so an interaction repaints from this instead of re-locating. Its filters stay transient on purpose: the view answers "what leaves here, now", and the next fix brings other stations. |
 | `lineCache` (Map) | lines per station | The answer does not change within a session, so ask once. |
@@ -113,7 +113,14 @@ section by section, and `moveFavorite` refuses a swap across a section edge —
 that would change the card's group behind the user's back.
 
 The nameless section has no heading and therefore no arrows of its own; it moves
-only when a named section passes it.
+only when a named section passes it, and it has nowhere to show an icon.
+
+A group's own icon cannot live on the group, because there is no such record —
+so `nextup:groupicons` maps the group *name* to it. The name is therefore the
+identity: a group re-created with the same spelling inherits the icon. When the
+last card leaves a group, the group ceases to exist, so `saveFavorites` sweeps
+icons whose name no longer appears in the list — one choke point rather than a
+rule every caller has to remember.
 
 ## Decisions worth remembering
 

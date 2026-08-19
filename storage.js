@@ -72,6 +72,7 @@ function flatten(sections) {
 
 function saveFavorites(list) {
   store.set('favorites', JSON.stringify(list));
+  pruneGroupIcons(list);
 }
 
 export function updateFavorite(uid, change) {
@@ -147,6 +148,38 @@ export function setGroup(uid, group) {
 
 export function setIcon(uid, icon) {
   updateFavorite(uid, (fav) => (fav.icon = icon));
+}
+
+// ---- Group icons ------------------------------------------------------------
+
+// A group has no record of its own — it is derived from the favorites' `group`
+// field — so its icon is kept beside the list, keyed by the name. That makes the
+// name the identity: re-creating a group spelled the same way gets its icon back.
+export function groupIcons() {
+  try {
+    return JSON.parse(store.get('groupicons') ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+export function setGroupIcon(group, icon) {
+  const icons = groupIcons();
+  if (icon) icons[group] = icon;
+  else delete icons[group];
+  store.set('groupicons', JSON.stringify(icons));
+}
+
+// The last card leaving a group is the group's end, and it can end from anywhere
+// that writes the list — hence the sweep here rather than at each call site.
+function pruneGroupIcons(list) {
+  const icons = groupIcons();
+  const names = new Set(list.map((f) => f.group).filter(Boolean));
+  const orphans = Object.keys(icons).filter((name) => !names.has(name));
+  if (!orphans.length) return;
+
+  for (const name of orphans) delete icons[name];
+  store.set('groupicons', JSON.stringify(icons));
 }
 
 /** The named sections, in section order. */
