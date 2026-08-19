@@ -70,6 +70,10 @@ adaptation of a desktop layout:
   browser tab.
 - Whole departure rows are buttons (`.row`, full width) rather than small
   tap targets, and the trip detail unfolds in place instead of navigating away.
+  A tile row is the same button, but a tile has no room to unfold anything: it
+  leaves compact mode and the list view shows the trip. The `expanded` set is
+  shared between the two views, so a row the user reached by expanding the tile
+  is not hidden behind a collapsed disclosure when it gets there.
 - Compact mode exists for exactly this: one tile per favourite, two departures
   each, several favourites on screen at once without scrolling.
 

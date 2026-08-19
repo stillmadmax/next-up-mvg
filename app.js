@@ -138,6 +138,13 @@ function whenLabel(d) {
   return `<span class="when">${d.cancelled ? 'entfällt' : when}</span>`;
 }
 
+// What toggleTrip needs to fetch the trip, on a list row as on a compact tile.
+function tripAttributes(d, stationId) {
+  return `data-trip="${esc(tripKey(stationId, d))}" data-station="${esc(stationId)}"
+    data-line="${esc(d.line)}" data-destination="${esc(d.destination)}"
+    data-planned="${d.planned}"`;
+}
+
 function departureRow(d, stationId) {
   const delay = d.delay > 0 ? `<span class="delay">+${d.delay}</span>` : '';
   const key = tripKey(stationId, d);
@@ -145,9 +152,7 @@ function departureRow(d, stationId) {
 
   return `
     <li class="${d.cancelled ? 'cancelled' : ''}${open ? ' open' : ''}">
-      <button class="row" data-trip="${esc(key)}" data-station="${esc(stationId)}"
-        data-line="${esc(d.line)}" data-destination="${esc(d.destination)}"
-        data-planned="${d.planned}">
+      <button class="row" ${tripAttributes(d, stationId)}>
         ${lineBadge(d)}
         <span class="dest">${esc(d.destination)}</span>
         ${delay}
@@ -328,12 +333,16 @@ function compactTile(fav, deps, move) {
   const visible = open ? deps.length : COMPACT_DEPARTURES;
   const hidden = deps.length - COMPACT_DEPARTURES;
 
+  // A tile has no room to unfold a trip, so the row leaves compact mode and the
+  // list view shows it — same button, same handler as there.
   const rows = deps.slice(0, visible).map(
     (d) => `
       <li class="${d.cancelled ? 'cancelled' : ''}">
-        ${lineBadge(d)}
-        <span class="at">${clockTime(d.at)}</span>
-        ${whenLabel(d)}
+        <button class="row" ${tripAttributes(d, fav.id)}>
+          ${lineBadge(d)}
+          <span class="at">${clockTime(d.at)}</span>
+          ${whenLabel(d)}
+        </button>
       </li>`
   );
 
@@ -491,10 +500,17 @@ function syncCompact() {
   el.compact.setAttribute('aria-pressed', String(compact));
 }
 
-el.compact.addEventListener('click', () => {
-  compact = !compact;
+// Leaving compact mode is a real mode change wherever it comes from — it sticks
+// across a reload like the toggle does, and it does not repaint on its own: the
+// callers all render right after anyway.
+function setCompact(value) {
+  compact = value;
   store.set('compact', compact ? '1' : '0');
   syncCompact();
+}
+
+el.compact.addEventListener('click', () => {
+  setCompact(!compact);
   renderFavorites();
 });
 
@@ -632,6 +648,9 @@ el.favorites.addEventListener('click', (e) => {
 
   const row = e.target.closest('[data-trip]');
   if (row) {
+    // The trip unfolds under its row, which a tile cannot do — so asking for one
+    // in compact mode means leaving it, exactly as if the toggle were pressed.
+    if (compact) setCompact(false);
     toggleTrip(row.dataset);
     return;
   }
